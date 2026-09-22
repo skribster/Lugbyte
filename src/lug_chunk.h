@@ -1,0 +1,44 @@
+#pragma once
+
+#include "lug_common.h"
+#include "lug_value.h"
+
+// Forward declaration for VMCore since
+// we need it for memory operations
+
+namespace Luggage {
+    
+class VMCore;
+
+struct LineStart {
+    std::size_t line;       // The line number.
+    std::size_t offset;     // The index of the first instruction of that line.
+};
+
+struct Chunk {
+public: 
+    ~Chunk();
+
+    void Write(std::uint8_t byte, std::size_t line);
+    void WriteConstant(Value value, std::size_t line);
+    std::size_t AddConstant(Value value);
+    std::size_t GetLine(std::size_t byteOffset);
+
+    // Bytecode array
+    std::uint8_t* bytecode{ nullptr };
+    std::size_t byteCount{ 0 };
+    std::size_t byteCapacity{ 0 };
+
+    // Line array
+    LineStart* lines{ nullptr };
+    std::size_t lineCount{ 0 };
+    std::size_t lineCapacity{ 0 };
+
+    ValueArray constants;
+
+private:
+    
+};
+
+
+}

@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.15)
+project(luggage LANGUAGES CXX) 
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+#-------- LUGGAGE IMPLEMENTATION --------
+add_library(luggage_core)
+target_sources(luggage_core
+    PRIVATE
+        src/lug_chunk.cpp
+        src/lug_debug.cpp
+        src/lug_memory.cpp
+        src/lug_opcodes.cpp
+        src/lug_value.cpp
+        src/lug_vm.cpp
+    PUBLIC 
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES 
+            include/luggage.hpp
+)
+
+
+#-------- LUGGAGE MAIN EXE --------
+add_executable(luggage)
+target_sources(luggage
+    PRIVATE 
+        main.cpp    
+)
+
+target_include_directories(luggage PUBLIC src) # FIXME: remove after testing!
+target_link_libraries(luggage PRIVATE luggage_core)
