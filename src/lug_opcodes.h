@@ -2,17 +2,17 @@
 
 #include "lug_common.h"
 
-#define OPCODE_LIST         \
-    OPCODE(CONSTANT)        \
-                            \
-    OPCODE(ADD)             \
-    OPCODE(SUBTRACT)        \
-    OPCODE(MULTIPLY)        \
-    OPCODE(DIVIDE)          \
-    OPCODE(INCREMENT)       \
-                            \
-    OPCODE(PRINT)           \
-                            \
+#define OPCODE_LIST             \
+    OPCODE(CONSTANT)            \
+                                \
+    OPCODE(NEGATE)              \
+                                \
+    OPCODE(ADD)                 \
+    OPCODE(SUBTRACT)            \
+    OPCODE(MULTIPLY)            \
+    OPCODE(DIVIDE)              \
+    OPCODE(INCREMENT)           \
+                                \
     OPCODE(RETURN)
 
 namespace Luggage {

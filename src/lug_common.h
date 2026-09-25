@@ -6,13 +6,9 @@
 // std::size_t
 #include <cstddef>
 
-#define ASSERT(condition, message)                                      \
-    do                                                                  \
-    {                                                                   \
-    if (!(condition))                                                   \
-    {                                                                   \
-        fprintf(stderr, "[%s:%d] Assert failed in %s(): %s\n",          \
-            __FILE__, __LINE__, __func__, message);                     \
-        abort();                                                        \
-    }                                                                   \
-    } while (false)
+#define LUG_DEBUG_TRACE_EXECUTION
+#define LUG_DEBUG_PRINT_CODE
+
+#if defined(__clang__) || defined(__GNUC__) 
+    #define USE_COMPUTED_GOTO
+#endif

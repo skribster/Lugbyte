@@ -5,6 +5,9 @@
 
 /build/
 /out/
+/CMakeFiles/
+
+*.dir
 
 # User-specific files
 *.rsuser

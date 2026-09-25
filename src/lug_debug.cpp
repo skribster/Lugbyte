@@ -48,8 +48,28 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return constantInstruction("OP_CONSTANT", chunk, offset);
         }
 
+        case OpCode::NEGATE: {
+            return simpleInstruction("OP_NEGATE", offset);
+        }
+
         case OpCode::ADD: {
             return simpleInstruction("OP_ADD", offset);
+        }
+
+        case OpCode::SUBTRACT: {
+            return simpleInstruction("OP_SUBTRACT", offset);
+        }
+
+        case OpCode::MULTIPLY: {
+            return simpleInstruction("OP_MULTIPLY", offset);
+        }
+
+        case OpCode::DIVIDE: {
+            return simpleInstruction("OP_DIVIDE", offset);
+        }
+
+        case OpCode::INCREMENT: {
+            return simpleInstruction("OP_INCREMENT", offset);
         }
 
         case OpCode::RETURN: {
