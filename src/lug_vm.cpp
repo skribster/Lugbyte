@@ -3,6 +3,7 @@
 #include "lug_vm.h"
 #include "lug_opcodes.h"
 #include "lug_debug.h"
+#include "lug_compiler.h"
 
 namespace Luggage {
 
@@ -165,6 +166,8 @@ InterpretResult VMCore::Run() {
     #undef READ_BYTE
     #undef READ_CONSTANT
     #undef BINARY_OP
+
+    #undef TRACE_EXECUTION 
     #undef DISPATCH
     #undef CASE
     #undef INTERPRET_LOOP
@@ -189,13 +192,21 @@ VM::~VM() = default;
  * Interprets a chunk's bytecode and returns
  * the result back.
  */
-InterpretResult VM::Interpret(Chunk& chunk) {
-    core->chunk = &chunk;
-    core->ip = chunk.bytecode;
+InterpretResult VM::Interpret(std::string_view source) {
+    Compiler compiler{ *core };
+    Chunk chunk{ *core };
 
-    InterpretResult result = core->Run();
+    bool success = compiler.Compile(chunk, source.data());
+    if (!success) {
+        return InterpretResult::COMPILE_ERROR;
+    }
 
-    return result;
+    // core->chunk = &chunk;
+    // core->ip = chunk.bytecode;
+
+    // InterpretResult result = core->Run();
+
+    return InterpretResult::OK;
 }
 
 }

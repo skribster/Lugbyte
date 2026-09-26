@@ -19,11 +19,6 @@ enum class InterpretResult {
  */
 class VMCore;
 
-//! FIXME: forward declaration for
-// testing purposes. do not include this
-// in the actual release. 
-struct Chunk;
-
 /**
  * A virtual machine for executing Luggage bytecode. 
  * It manages the execution state, including the stack, 
@@ -38,7 +33,7 @@ public:
     // void LoadStandardLibraries();
 
      // Takes in a string and interprets it.
-    InterpretResult Interpret(Chunk& chunk);
+    InterpretResult Interpret(std::string_view source);
 
 private:
     std::unique_ptr<VMCore> core;

@@ -9,7 +9,9 @@ add_library(luggage_core)
 target_sources(luggage_core
     PRIVATE
         src/lug_chunk.cpp
+        src/lug_compiler.cpp
         src/lug_debug.cpp
+        src/lug_lexer.cpp
         src/lug_memory.cpp
         src/lug_opcodes.cpp
         src/lug_value.cpp
@@ -29,5 +31,4 @@ target_sources(luggage
         main.cpp    
 )
 
-target_include_directories(luggage PUBLIC src) # FIXME: remove after testing!
 target_link_libraries(luggage PRIVATE luggage_core)

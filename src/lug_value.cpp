@@ -32,7 +32,7 @@ void Value::Print(const Value& value) {
 // Value Array Methods ------------------------------
 
 ValueArray::~ValueArray() {
-    Memory::FreeArray<Value>(values, valueCapacity);
+    Memory::FreeArray<Value>(vm, values, valueCapacity);
 }
 
 
@@ -41,7 +41,7 @@ void ValueArray::Write(Value value) {
         std::size_t oldCapacity = valueCapacity;
         valueCapacity = Memory::GrowCapacity(oldCapacity);
 
-        values = Memory::GrowArray<Value>(values, oldCapacity, valueCapacity);
+        values = Memory::GrowArray<Value>(vm, values, oldCapacity, valueCapacity);
     }
 
     values[valueCount] = value;

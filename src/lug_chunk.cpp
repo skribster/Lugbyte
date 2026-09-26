@@ -7,7 +7,7 @@ namespace Luggage {
 
 
 Chunk::~Chunk() {
-    Memory::FreeArray<std::uint8_t>(bytecode, byteCapacity);
+    Memory::FreeArray<std::uint8_t>(vm, bytecode, byteCapacity);
 }
 
 
@@ -25,7 +25,7 @@ void Chunk::Write(std::uint8_t byte, std::size_t line) {
         byteCapacity = Memory::GrowCapacity(oldCapacity);
 
         // Grow the array in heap memory.
-        bytecode = Memory::GrowArray<std::uint8_t>(bytecode, oldCapacity, byteCapacity);
+        bytecode = Memory::GrowArray<std::uint8_t>(vm, bytecode, oldCapacity, byteCapacity);
     }
 
     bytecode[byteCount] = byte;
@@ -47,7 +47,7 @@ void Chunk::Write(std::uint8_t byte, std::size_t line) {
         std::size_t oldCapacity = lineCapacity;
 
         lineCapacity = Memory::GrowCapacity(oldCapacity);
-        lines = Memory::GrowArray<LineStart>(lines, oldCapacity, byteCapacity);
+        lines = Memory::GrowArray<LineStart>(vm, lines, oldCapacity, byteCapacity);
     }
 
     // Write a new line start.

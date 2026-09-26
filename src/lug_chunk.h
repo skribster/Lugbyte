@@ -17,6 +17,7 @@ struct LineStart {
 
 struct Chunk {
 public: 
+    explicit Chunk(VMCore& vm) : vm(vm), constants(vm) {};
     ~Chunk();
 
     void Write(std::uint8_t byte, std::size_t line);
@@ -37,7 +38,7 @@ public:
     ValueArray constants;
 
 private:
-    
+    VMCore& vm;
 };
 
 

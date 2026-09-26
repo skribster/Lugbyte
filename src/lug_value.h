@@ -65,8 +65,9 @@ private:
     } as;
 };
 
-
+class VMCore;
 struct ValueArray {
+    ValueArray(VMCore& vm) : vm(vm) {}
     ~ValueArray();
 
     void Write(Value value);    
@@ -74,6 +75,8 @@ struct ValueArray {
     std::size_t valueCapacity{ 0 };
     std::size_t valueCount{ 0 };
     Value* values{ nullptr };
+
+    VMCore& vm;
 };
 
 }

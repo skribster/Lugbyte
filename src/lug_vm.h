@@ -1,7 +1,6 @@
 #pragma once
 
 #include "luggage.hpp"
-
 #include "lug_common.h"
 #include "lug_value.h"
 #include "lug_chunk.h"

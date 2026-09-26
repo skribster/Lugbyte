@@ -20,26 +20,26 @@ namespace Luggage::Memory {
  * if oldSize != 0 and newSize < oldSize, shrink allocation
  * if oldSize != 0 and newSize > oldSize, grow allocation
  */
-void* Reallocate(void* pointer, std::size_t oldSize, std::size_t newSize);
+void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t newSize);
 
 /**
  * Grows a dynamic array to the new capacity.
  */
 template <typename T>
-T* GrowArray(T* array, std::size_t oldCapacity, std::size_t newCapacity) {
-    return (T*)Reallocate(array, sizeof(T) * oldCapacity, sizeof(T) * newCapacity);
+T* GrowArray(VMCore& vm, T* array, std::size_t oldCapacity, std::size_t newCapacity) {
+    return (T*)Reallocate(vm, array, sizeof(T) * oldCapacity, sizeof(T) * newCapacity);
 }
 
 /**
  * Frees a dynamic array from memory.
  */ 
 template<typename T>
-T* FreeArray(T* array, std::size_t currentCapacity) {
+T* FreeArray(VMCore& vm, T* array, std::size_t currentCapacity) {
     // We route freeing to the Reallocate function, but just set
     // the new size to 0. We have to route all memory functions to
     // Reallocate because the VM needs to keep track of how mnay bytes
     // it allocates so it knows when to garbage collect.
-    return (T*)Reallocate(array, sizeof(T) * currentCapacity, 0);
+    return (T*)Reallocate(vm, array, sizeof(T) * currentCapacity, 0);
 }
 /**
  * Calculates a new capacity based on a given
