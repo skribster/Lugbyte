@@ -41,6 +41,17 @@ T* FreeArray(VMCore& vm, T* array, std::size_t currentCapacity) {
     // it allocates so it knows when to garbage collect.
     return (T*)Reallocate(vm, array, sizeof(T) * currentCapacity, 0);
 }
+
+
+/**
+ * Allocates a memory block of given type with
+ * a given count.
+ */
+template<typename T>
+T* Allocate(VMCore& vm, std::size_t count) {
+    return (T*)Reallocate(vm, nullptr, 0, sizeof(T) * count);
+}
+
 /**
  * Calculates a new capacity based on a given
  * current capacity. The minimum capacity is
@@ -49,6 +60,9 @@ T* FreeArray(VMCore& vm, T* array, std::size_t currentCapacity) {
 constexpr std::size_t GrowCapacity(std::size_t capacity) {
     return capacity < 8 ? 8 : capacity * 2;
 }
+
+
+void FreeObjects(VMCore& vm);
 
 
 }

@@ -109,7 +109,7 @@ const ParseRule Compiler::rules[] = {
     
     // One-or-two character tokens
     { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },         // EQUAL
-    { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },       // BANG_EQUAL
+    { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },         // BANG_EQUAL
     { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // GREATER
     { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // GREATER_EQUAL
     { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // LESS
@@ -118,7 +118,7 @@ const ParseRule Compiler::rules[] = {
 
     // Literals         
     { nullptr,                  nullptr,                Precedence::NONE },             // IDENTIFIER
-    { nullptr,                  nullptr,                Precedence::NONE },             // STRING
+    { &Compiler::String,        nullptr,                Precedence::NONE },             // STRING
     { &Compiler::Number,        nullptr,                Precedence::NONE },             // NUMBER
 
     // Keywords         
@@ -173,6 +173,7 @@ void Compiler::Expression() {
     ParsePrecedence(Precedence::ASSIGNMENT);
 }
 
+
 /**
  * Parses an expression in parentheses.
  */
@@ -180,6 +181,7 @@ void Compiler::Grouping() {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
 }
+
 
 /**
  * Parses a unary expression and emits the corresponding bytecode. 
@@ -210,6 +212,7 @@ void Compiler::Unary() {
     }
 }
 
+
 /**
  * Parses a binary expression with two operands.
  */
@@ -239,12 +242,32 @@ void Compiler::Binary() {
 }
 
 
+/**
+ * Emits a number into the bytecode stream.
+ */
 void Compiler::Number() {
     double value = std::strtod(parser.previous.start, nullptr);
     EmitConstant(value);
 }
 
 
+/**
+ * Emits a string into the bytecode stream.
+ */
+void Compiler::String() {
+    ObjString* stringObject = ObjString::CopyFrom(
+        vm,
+        parser.previous.start + 1, // Start right after the first quote
+        parser.previous.length - 2 // Account for the two quotes from beginning to end   
+    );
+
+    EmitConstant(stringObject);
+}
+
+
+/**
+ * Emits a literal (true, false, nil)
+ */
 void Compiler::Literal() {
     TokenType literalType = parser.previous.type;
 

@@ -4,6 +4,7 @@
 #include "lug_opcodes.h"
 #include "lug_debug.h"
 #include "lug_compiler.h"
+#include "lug_memory.h"
 
 namespace Luggage {
 
@@ -13,16 +14,23 @@ namespace Luggage {
  * A value is falsy if it's explicitly set as 'nil' or 'false'.
  * Anything else is truthy.
  */
-static bool isFalsy(Value value) {
+static bool IsFalsy(Value value) {
     return value.IsNil() || value.IsBool() && !value.AsBool();
 }
 
 
 // VMCore methods -----------------------------------
 
-VMCore::VMCore() {
+VMCore::VMCore() 
+: strings(*this) 
+{
     ResetStack();
 }
+
+VMCore::~VMCore() {
+    Memory::FreeObjects(*this); 
+}   
+
 
 /**
  * Pushes the given value onto the stack.
@@ -31,6 +39,12 @@ void VMCore::Push(Value value) {
     *stackTop = value;
     stackTop++;   
 }
+
+
+Value& VMCore::Peek(std::size_t distance) const {
+    return stackTop[-1 - distance];
+}
+
 
 /**
  * Pops the top value off the stack and returns
@@ -41,12 +55,34 @@ Value VMCore::Pop() {
     return *stackTop;
 }
 
+
 /**
  * Discards all of the stack's items.
  */
 void VMCore::ResetStack() {
     stackTop = stack;
 }
+
+
+/**
+ * Tries to concatenate the two most recent values onto 
+ * the stack, assuming they are of type ObjString.
+ * Then, pushes back the concatenated result.
+ */
+void VMCore::Concatenate() {
+    ObjString* b = Pop().AsObj<ObjString>();
+    ObjString* a = Pop().AsObj<ObjString>();
+
+    std::size_t length = a->length + b->length;
+    char* chars = Memory::Allocate<char>(*this, length + 1);
+    std::memcpy(chars, a->characters, a->length);
+    std::memcpy(chars + a->length, b->characters, b->length);
+    chars[length] = '\0';
+
+    ObjString* result = ObjString::TakeFrom(*this, chars, length);
+    Push(result);
+}
+
 
 /**
  * The actual interpreter loop where it runs 
@@ -137,7 +173,7 @@ void VMCore::Run() {
 
         CASE(NOT): {
             Value value = Pop();
-            Push(isFalsy(value));
+            Push(IsFalsy(value));
             DISPATCH();
         }
 
@@ -157,7 +193,19 @@ void VMCore::Run() {
         }
 
         CASE(ADD): {
-            BINARY_OP(+);
+            if (Peek(0).IsObj(ObjType::STRING) && Peek(1).IsObj(ObjType::STRING)) {
+                Concatenate();
+            } else if (Peek(0).IsNumber() && Peek(1).IsNumber()) {
+                double b = Pop().AsNumber();
+                double a = Pop().AsNumber();
+
+                Push(a + b);
+
+            } else {
+                RuntimeError("Operands must be two numbers or two strings.");
+                return;
+            }
+
             DISPATCH();
         }
 

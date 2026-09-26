@@ -22,4 +22,22 @@ void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t new
     return resized;
 }
 
+static void FreeObject(VMCore& vm, Obj* obj) {
+    // Store the size before we call the destructor
+    // since the destructor might modify the size or other members of the object...
+    std::size_t size = obj->size; 
+    obj->~Obj();
+    Reallocate(vm, obj, size, 0);
+}
+
+
+void FreeObjects(VMCore& vm) {
+    Obj* object = vm.objects;
+    while (object != nullptr) {
+        Obj* next = object->next;
+        FreeObject(vm, object);
+        object = next;
+    }
+}
+
 }

@@ -1,71 +1,95 @@
 #pragma once
 
-
 namespace Luggage {
+
+enum class ValueType {
+    BOOLEAN,
+    NUMBER,
+    NIL,
+    OBJ,
+
+    // Not to be used directly.
+    TOMBSTONE
+};
+
+
+struct Obj;
+enum class ObjType;
 
 /**
  * Represents a single Luggage dynamic value.
- * 
- *
- * We store a value as a struct that holds the current
- * type of the value, and a union that's the actual
- * value of the... well, value.
- * 
- * Visualized
- * ----------------------------------
- * (Keep in mind that the extra padding is due to
- * struct alignment, where each item is aligned
- * in byte multiples of the largest item in size)
- * [****] [     ] [********]
- *  ^^^^   ^^^^^   ^^^^^^^^
- *  Type  Padding    'as'
- *                 ^^^^^^^^
- *                   number 
- *                 ^
- *              boolean
  */
 struct Value {
-public:
-    enum class Type {
-        BOOLEAN,
-        NUMBER,
-        NIL,
-        OBJ,
-    };
+    public:
 
-    Value() : type(Type::NIL) { as.number = 0; }
+    Value() : type(ValueType::NIL) { as.number = 0; }
 
     bool operator==(const Value& other) const;
     
-    Value(double number) : type(Type::NUMBER)       { as.number = number; }
-    Value(int number) : type(Type::NUMBER)          { as.number = static_cast<double>(number); }
-    Value(bool boolean) : type(Type::BOOLEAN)       { as.boolean = boolean; }
+    Value(double number) : type(ValueType::NUMBER)          { as.number = number; }
+    Value(int number) : type(ValueType::NUMBER)             { as.number = static_cast<double>(number); }
+    Value(bool boolean) : type(ValueType::BOOLEAN)          { as.boolean = boolean; }
+    Value(Obj* obj) : type(ValueType::OBJ)                  { as.obj = static_cast<Obj*>(obj); }
 
     // Named singleton constructors
-    inline static Value Nil() { return Value(Type::NIL); }
+    inline static Value Nil()           { return Value(ValueType::NIL); }
+    inline static Value Tombstone()     { return Value(ValueType::TOMBSTONE); }
 
     // Casting methods for converting a struct Value to a native C++ value
-    inline double AsNumber() const  { return as.number; }
-    inline bool AsBool() const      { return as.boolean; }
+    inline double AsNumber() const      { return as.number; }
+    inline bool AsBool() const          { return as.boolean; }
+    inline Obj* AsObj() const           { return as.obj; }
+
+    template<typename T> 
+    T* AsObj() const { return static_cast<T*>(AsObj()); }
 
     // Type-checking methods for checking the type of a struct Value
-    inline bool IsNumber() const    { return type == Type::NUMBER; }
-    inline bool IsBool() const      { return type == Type::BOOLEAN; }
-    inline bool IsNil() const       { return type == Type::NIL; }
+    inline bool IsNumber() const        { return type == ValueType::NUMBER; }
+    inline bool IsBool() const          { return type == ValueType::BOOLEAN; }
+    inline bool IsNil() const           { return type == ValueType::NIL; }
+    inline bool IsObj() const           { return type == ValueType::OBJ; }
+    inline bool IsTombstone() const     { return type == ValueType::TOMBSTONE; }
+    
+    bool IsObj(ObjType type) const;
 
+    // I like the convention of passing in the value to Print()
+    // because it looks better..........
     static void Print(const Value& value);
+    std::uint32_t GetHash() const;
 
-    Type type;
+    ValueType type;
     
 private:
     // Tag-only constructor used ONLY internally for building a singleton type
-    explicit Value(Type type) : type(type) { as.number = 0; }
+    explicit Value(ValueType type) : type(type) { as.number = 0; }
 
+    /*
+        We store a value as a struct that holds the current
+        type of the value, and a union that's the actual
+        value of the... well, value.
+        
+        Visualized
+        ----------------------------------
+        (Keep in mind that the extra padding is due to
+        struct alignment, where each item is aligned
+        in byte multiples of the largest item in size)
+
+        [****] [     ] [********]
+         ^^^^   ^^^^^   ^^^^^^^^
+         Type  Padding    'as'
+                        ^^^^^^^^
+                          number 
+                        ^
+                     boolean
+
+    */
     union {
         double number;
         bool boolean;
+        Obj* obj;
     } as;
 };
+
 
 class VMCore;
 struct ValueArray {

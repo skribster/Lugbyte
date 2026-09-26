@@ -13,8 +13,10 @@ target_sources(luggage_core
         src/lug_debug.cpp
         src/lug_lexer.cpp
         src/lug_memory.cpp
+        src/lug_object.cpp
         src/lug_opcodes.cpp
         src/lug_parser.cpp
+        src/lug_table.cpp
         src/lug_value.cpp
         src/lug_vm.cpp
     PUBLIC 

@@ -67,6 +67,7 @@ private:
     void Unary();
     void Binary();
     void Number();
+    void String();
     void Literal();
 
     void ParsePrecedence(Precedence minimumPrecedence);
