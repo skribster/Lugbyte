@@ -1,6 +1,7 @@
 #include <cstring>
 #include <array>
 
+#include "luggage.hpp"
 #include "lug_lexer.h"
 
 namespace Luggage {
@@ -91,16 +92,12 @@ Token Lexer::MakeToken(TokenType type) {
  * Produces an error token that holds an error
  * message.
  */
-Token Lexer::ErrorToken(const char* message) {
-    Token errorToken;
+void Lexer::LexError(const char* message) {
+    LugError error;
+    error.type = ErrorType::COMPILE;
+    error.message = message;
 
-    errorToken.type = TokenType::ERROR;
-    errorToken.start = message;
-
-    errorToken.length = std::strlen(message);
-    errorToken.line = line;
-
-    return errorToken;
+    throw error;
 }
 
 
@@ -147,11 +144,11 @@ Token Lexer::Number() {
 
 Token Lexer::String() {
     while (Peek() != '"' && !IsAtEnd()) {
-        if (Peek() == '\n') return ErrorToken("Unterminated string.");
+        if (Peek() == '\n') LexError("Unterminated string.");
         Advance();
     }
 
-    if (IsAtEnd()) return ErrorToken("Unterminated string.");
+    if (IsAtEnd()) LexError("Unterminated string.");
 
     // The closing quote.
     Advance();
@@ -272,22 +269,24 @@ Token Lexer::ScanToken() {
         case '+': return MakeToken(TokenType::PLUS);
         case '/': return MakeToken(TokenType::SLASH);
         case '*': return MakeToken(TokenType::STAR);
+        case '=': return MakeToken(TokenType::EQUAL);
 
         case '!':
-            return MakeToken(Match('=') ? TokenType::BANG_EQUAL : TokenType::BANG);
-        case '=':
-            return MakeToken(Match('=') ? TokenType::EQUAL_EQUAL : TokenType::EQUAL);
+            if (Match('=')) return MakeToken(TokenType::BANG_EQUAL);
+            
         case '<':
             if (Match('=')) return MakeToken(TokenType::LESS_EQUAL);       // <=
             else if (Match('-')) return MakeToken(TokenType::LEFT_ARROW);  // <-
             else return MakeToken(TokenType::LESS);                       // <
+        
         case '>':
             return MakeToken(Match('=') ? TokenType::GREATER_EQUAL : TokenType::GREATER);
+        
         case '"':
             return String();
     }
 
-    return ErrorToken("Unexpected character.");
+    LexError("Unexpected character.");
 }
 
 

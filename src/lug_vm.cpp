@@ -7,6 +7,17 @@
 
 namespace Luggage {
 
+// Helper functions -----------------------------------
+
+/**
+ * A value is falsy if it's explicitly set as 'nil' or 'false'.
+ * Anything else is truthy.
+ */
+static bool isFalsy(Value value) {
+    return value.IsNil() || value.IsBool() && !value.AsBool();
+}
+
+
 // VMCore methods -----------------------------------
 
 VMCore::VMCore() {
@@ -41,7 +52,7 @@ void VMCore::ResetStack() {
  * The actual interpreter loop where it runs 
  * each instruction from its chunk.
  */
-InterpretResult VMCore::Run() {
+void VMCore::Run() {
     #define READ_BYTE() (*ip++)
     #define READ_CONSTANT() (chunk->constants.values[READ_BYTE()])
 
@@ -50,7 +61,7 @@ InterpretResult VMCore::Run() {
         Value b = Pop();                                \
         Value a = Pop();                                \
         if (!a.IsNumber() || !b.IsNumber()) {           \
-            return InterpretResult::RUNTIME_ERROR;      \
+            RuntimeError("Operands must be numbers.");  \
         }                                               \
         Push(a.AsNumber() op b.AsNumber());             \
     } while (false)
@@ -118,10 +129,30 @@ InterpretResult VMCore::Run() {
             Value value = Pop();
             if (!value.IsNumber()) {
                 RuntimeError("Operand must be a number.");
-                return InterpretResult::RUNTIME_ERROR;
             }
 
             Push(-value.AsNumber());
+            DISPATCH();
+        }
+
+        CASE(NOT): {
+            Value value = Pop();
+            Push(isFalsy(value));
+            DISPATCH();
+        }
+
+        CASE(TRUE): {
+            Push(true);
+            DISPATCH();
+        }
+
+        CASE(FALSE): {
+            Push(false);
+            DISPATCH();
+        }
+
+        CASE(NIL): {
+            Push(Value::Nil());
             DISPATCH();
         }
 
@@ -145,21 +176,37 @@ InterpretResult VMCore::Run() {
             DISPATCH();
         }
 
-        CASE(INCREMENT): {
-            Value value = Pop();
-            if (!value.IsNumber()) {
-                RuntimeError("Cannot increment a non-number.");
-            }
-            Push(value.AsNumber() + 1);
+        CASE(EQUAL): {
+            Value b = Pop();
+            Value a = Pop();
+            Push(a == b);
+            DISPATCH();
+        }
 
+        CASE(GREATER): {
+            BINARY_OP(>);
+            DISPATCH();
+        }
+        
+        CASE(GREATER_EQUAL): {
+            BINARY_OP(>=);
+            DISPATCH();
+        }
+        
+        CASE(LESS): {
+            BINARY_OP(<);
+            DISPATCH();
+        }
+        
+        CASE(LESS_EQUAL): {
+            BINARY_OP(<=);
             DISPATCH();
         }
 
         CASE(RETURN): {
             Value::Print(Pop());
             std::printf("\n");
-
-            return InterpretResult::OK;
+            return; // Break out of the interpreter loop.
         }
     }
 
@@ -171,8 +218,26 @@ InterpretResult VMCore::Run() {
     #undef DISPATCH
     #undef CASE
     #undef INTERPRET_LOOP
+}
 
-    return InterpretResult::RUNTIME_ERROR;
+
+void VMCore::RuntimeError(std::string message) {
+    // Get current byte
+    std::size_t byteOffset = static_cast<std::size_t>(ip - chunk->bytecode);
+    std::size_t line = chunk->GetLine(byteOffset);
+
+    std::string errorMessage;
+    errorMessage += "[line ";
+    errorMessage += std::to_string(line);
+    errorMessage += "]\n";
+
+    errorMessage += message;
+
+    LugError error;
+    error.type = ErrorType::RUNTIME;
+    error.message = errorMessage;
+
+    throw error;
 }
 
 
@@ -192,21 +257,29 @@ VM::~VM() = default;
  * Interprets a chunk's bytecode and returns
  * the result back.
  */
-InterpretResult VM::Interpret(std::string_view source) {
+bool VM::Interpret(std::string_view source) {
     Compiler compiler{ *core };
     Chunk chunk{ *core };
 
-    bool success = compiler.Compile(chunk, source.data());
-    if (!success) {
-        return InterpretResult::COMPILE_ERROR;
+    try {
+        compiler.Compile(chunk, source.data());
+
+        core->chunk = &chunk;
+        core->ip = chunk.bytecode;
+        core->Run();
+
+    } catch (LugError error) {
+        core->lastError = error;
+        return false;
     }
 
-    // core->chunk = &chunk;
-    // core->ip = chunk.bytecode;
-
-    // InterpretResult result = core->Run();
-
-    return InterpretResult::OK;
+    return true;
 }
+
+
+const LugError& VM::LastError() const {
+    return core->lastError;
+}
+
 
 }

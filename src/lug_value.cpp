@@ -6,6 +6,27 @@
 namespace Luggage {
 
 // Value methods ------------------------------
+bool Value::operator==(const Value& other) const {
+    if (type != other.type) return false;
+
+    switch (type) {
+        case Value::Type::BOOLEAN: {
+            return AsBool() == other.AsBool(); 
+        }
+
+        case Value::Type::NUMBER: {
+            return AsNumber() == other.AsNumber();
+        }
+
+        case Value::Type::NIL: {
+            return true;
+        }
+
+        default: UNREACHABLE();
+    }
+}
+
+
 void Value::Print(const Value& value) {
     switch (value.type) {
         case Value::Type::NUMBER: {
@@ -20,6 +41,7 @@ void Value::Print(const Value& value) {
 
         case Value::Type::NIL: {
             std::printf("nil");
+            break;
         }
 
         default: {

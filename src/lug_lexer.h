@@ -2,7 +2,6 @@
 
 #include "lug_common.h"
 
-
 namespace Luggage {
 
 enum class TokenType {
@@ -25,10 +24,8 @@ enum class TokenType {
     MODULO,
 
 	// One-or-two character tokens
-    BANG,
-    BANG_EQUAL,
     EQUAL,
-    EQUAL_EQUAL,
+    BANG_EQUAL,
     GREATER,
     GREATER_EQUAL,
     LESS,
@@ -39,7 +36,6 @@ enum class TokenType {
     IDENTIFIER,
     STRING,
     NUMBER,
-    ERROR,
 
     // Keywords
     AND,
@@ -92,8 +88,8 @@ public:
     Token ScanToken();
     
 private:
+    [[noreturn]] void LexError(const char* message);
     Token MakeToken(TokenType type);
-    Token ErrorToken(const char* message);
     
     Token Identifier();
     Token Number();

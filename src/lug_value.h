@@ -34,6 +34,8 @@ public:
     };
 
     Value() : type(Type::NIL) { as.number = 0; }
+
+    bool operator==(const Value& other) const;
     
     Value(double number) : type(Type::NUMBER)       { as.number = number; }
     Value(int number) : type(Type::NUMBER)          { as.number = static_cast<double>(number); }

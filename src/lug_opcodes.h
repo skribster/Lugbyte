@@ -6,12 +6,22 @@
     OPCODE(CONSTANT)            \
                                 \
     OPCODE(NEGATE)              \
+    OPCODE(NOT)                 \
+                                \
+    OPCODE(TRUE)                \
+    OPCODE(FALSE)               \
+    OPCODE(NIL)                 \
                                 \
     OPCODE(ADD)                 \
     OPCODE(SUBTRACT)            \
     OPCODE(MULTIPLY)            \
     OPCODE(DIVIDE)              \
-    OPCODE(INCREMENT)           \
+                                \
+    OPCODE(EQUAL)               \
+    OPCODE(GREATER)             \
+    OPCODE(GREATER_EQUAL)       \
+    OPCODE(LESS)                \
+    OPCODE(LESS_EQUAL)          \
                                 \
     OPCODE(RETURN)
 

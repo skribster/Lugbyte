@@ -1,16 +1,23 @@
 #pragma once
 
 #include <string_view>
+#include <string>
 #include <memory>
-
 
 namespace Luggage {
 
-enum class InterpretResult {
-    OK,
-    COMPILE_ERROR,
-    RUNTIME_ERROR,
+enum class ErrorType {
+    COMPILE,
+    RUNTIME,
+    MEMORY
 };
+
+
+struct LugError {
+    ErrorType type;
+    std::string message;
+};  
+
 
 /**
  * Not to be used directly. This class is the
@@ -32,8 +39,14 @@ public:
 
     // void LoadStandardLibraries();
 
-     // Takes in a string and interprets it.
-    InterpretResult Interpret(std::string_view source);
+    /*
+        Takes in a Luggage program and interprets it. Returns
+        'true' if success, and 'false' if not.
+
+        You can get the last error with VM::LastError().
+    */
+    [[nodiscard]] bool Interpret(std::string_view source);
+    const LugError& LastError() const;
 
 private:
     std::unique_ptr<VMCore> core;

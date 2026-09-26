@@ -15,7 +15,11 @@ static void Repl(Luggage::VM& vm) {
 
         if (line.empty()) break;
 
-        Luggage::InterpretResult result = vm.Interpret(line);
+        bool success = vm.Interpret(line);
+        if (!success) {
+            const Luggage::LugError& error = vm.LastError();
+            std::cerr << error.message << '\n';
+        }
     }
 }
 
@@ -36,10 +40,15 @@ static std::string ReadFile(std::string_view path) {
 
 static void RunFile(Luggage::VM& vm, std::string_view path) {
     std::string source = ReadFile(path);
-    Luggage::InterpretResult result = vm.Interpret(source);
+    bool success = vm.Interpret(source);
 
-    if (result == Luggage::InterpretResult::COMPILE_ERROR) exit(65);
-    if (result == Luggage::InterpretResult::RUNTIME_ERROR) exit(70);
+    if (success) return;
+    
+    const Luggage::LugError& error = vm.LastError();
+    std::cerr << error.message << '\n';
+
+    if (error.type == Luggage::ErrorType::COMPILE) exit(65);
+    if (error.type == Luggage::ErrorType::RUNTIME) exit(70); 
 }
 
 
@@ -51,7 +60,7 @@ int main(int argc, char* argv[]){
     } else if (argc == 2) {
         RunFile(vm, argv[1]);
     } else {
-        std::fprintf(stderr, "Usage: lox [path]\n");
+        std::fprintf(stderr, "Usage: luggage [path]\n");
         exit(64);
     }
 
