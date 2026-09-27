@@ -23,6 +23,13 @@
     OPCODE(LESS)                \
     OPCODE(LESS_EQUAL)          \
                                 \
+    OPCODE(DEFINE_GLOBAL)       \
+    OPCODE(GET_GLOBAL)          \
+    OPCODE(SET_GLOBAL)          \
+                                \
+    OPCODE(POP)                 \
+    OPCODE(PRINT)               \
+                                \
     OPCODE(RETURN)
 
 namespace Luggage {

@@ -10,9 +10,9 @@ void Compiler::Compile(Chunk& chunk, const char* source) {
 
     compilingChunk = &chunk;
 
-    parser.Advance();
-    Expression();
-    parser.Consume(TokenType::END_OF_FILE, "Expected end of expression.");
+    while (!parser.Match(TokenType::END_OF_FILE)) {
+        Statement();
+    }
 
     //! Factor into EndCompiler() when the time is right.
     EmitReturn();
@@ -85,6 +85,87 @@ std::uint8_t Compiler::MakeConstant(Value value) {
     return static_cast<std::uint8_t>(constant);
 }
 
+/**
+ * Adds the identifier as an ObjString constant in the 
+ * constant pool and returns the index of the constant.
+ */
+std::uint8_t Compiler::IdentifierConstant(Token& identifier) {
+    ObjString* string = ObjString::CopyFrom(vm, identifier.start, identifier.length);
+    return MakeConstant(string);
+}
+
+/**
+ * Takes the next token (presumed identifier) and 
+ * parses it as a variable name.
+ * 
+ * If the variable is a global, this function uses the 
+ * identifier to create a new ObjString* constant, in which
+ * MakeVariable returns the index to.
+ */
+std::uint8_t Compiler::ParseVariable(const char* errorMessage) {
+    parser.Consume(TokenType::IDENTIFIER, errorMessage);
+    return IdentifierConstant(parser.previous);
+}
+
+
+void Compiler::DefineVariable(std::uint8_t index) {
+    EmitBytes(OpCode::DEFINE_GLOBAL, index);
+}
+
+
+// Statement methods ------------------------------------------
+
+void Compiler::Statement() {
+    if (parser.Match(TokenType::PRINT)) {
+        PrintStatement();    
+    } 
+
+    else if (parser.Match(TokenType::BOX)) {
+        BoxStatement();
+    }
+    
+    else {
+        ExpressionStatement();
+    }
+
+    // Optional leading semicolon :)
+    while (parser.Match(TokenType::SEMICOLON)) {
+        // Do nothing.
+    }
+}
+
+
+void Compiler::PrintStatement() {
+    Expression();
+    EmitByte(OpCode::PRINT);
+}
+
+
+void Compiler::BoxStatement() {
+    std::uint8_t global = ParseVariable("Expected variable name.");
+
+    if (parser.Match(TokenType::LEFT_ARROW)) {
+        Expression();
+    // box a
+    } else {
+        EmitByte(OpCode::NIL);
+    }
+
+    DefineVariable(global);
+}
+
+
+void Compiler::ExpressionStatement() {
+    isValidExprStmt = false;
+    Expression();
+
+    if (!isValidExprStmt) {
+        parser.Error("Only assignments and function calls are valid expression statements.");
+    }
+
+    EmitByte(OpCode::POP);
+}
+
 
 // Expression methods ------------------------------------------
 
@@ -117,7 +198,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // LEFT_ARROW
 
     // Literals         
-    { nullptr,                  nullptr,                Precedence::NONE },             // IDENTIFIER
+    { &Compiler::Variable,      nullptr,                Precedence::NONE },             // IDENTIFIER
     { &Compiler::String,        nullptr,                Precedence::NONE },             // STRING
     { &Compiler::Number,        nullptr,                Precedence::NONE },             // NUMBER
 
@@ -177,7 +258,7 @@ void Compiler::Expression() {
 /**
  * Parses an expression in parentheses.
  */
-void Compiler::Grouping() {
+void Compiler::Grouping(bool canAssign) {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
 }
@@ -186,7 +267,7 @@ void Compiler::Grouping() {
 /**
  * Parses a unary expression and emits the corresponding bytecode. 
  */
-void Compiler::Unary() {
+void Compiler::Unary(bool canAssign) {
     /*
         Recall that the instruction goes after its operand, such as:
         OP_CONSTANT 5
@@ -216,7 +297,7 @@ void Compiler::Unary() {
 /**
  * Parses a binary expression with two operands.
  */
-void Compiler::Binary() {
+void Compiler::Binary(bool canAssign) {
     // When we reach this function, the 'previous' token
     // points to the infix operator. (+, -, /, *, etc)
     TokenType operatorType = parser.previous.type;
@@ -245,7 +326,7 @@ void Compiler::Binary() {
 /**
  * Emits a number into the bytecode stream.
  */
-void Compiler::Number() {
+void Compiler::Number(bool canAssign) {
     double value = std::strtod(parser.previous.start, nullptr);
     EmitConstant(value);
 }
@@ -254,7 +335,7 @@ void Compiler::Number() {
 /**
  * Emits a string into the bytecode stream.
  */
-void Compiler::String() {
+void Compiler::String(bool canAssign) {
     ObjString* stringObject = ObjString::CopyFrom(
         vm,
         parser.previous.start + 1, // Start right after the first quote
@@ -268,7 +349,7 @@ void Compiler::String() {
 /**
  * Emits a literal (true, false, nil)
  */
-void Compiler::Literal() {
+void Compiler::Literal(bool canAssign) {
     TokenType literalType = parser.previous.type;
 
     switch (literalType) {
@@ -279,6 +360,23 @@ void Compiler::Literal() {
         default: UNREACHABLE();
     }
 }
+
+
+/**
+ * Handles a variable expression
+ */
+void Compiler::Variable(bool canAssign) {
+    std::uint8_t global = IdentifierConstant(parser.previous);
+    
+    if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
+        Expression();
+        EmitBytes(OpCode::SET_GLOBAL, global);
+        isValidExprStmt = true;
+    } else {
+        EmitBytes(OpCode::GET_GLOBAL, global);
+    }
+}
+
 
 // Compiler parse methods -----------------------------------------------
 /**
@@ -295,12 +393,17 @@ void Compiler::ParsePrecedence(Precedence minimumPrecedence) {
         return;
     }
 
-    (this->*prefixRule)();
+    bool canAssign = minimumPrecedence <= Precedence::ASSIGNMENT;
+    (this->*prefixRule)(canAssign);
 
     while (GetRule(parser.current.type).precedence >= minimumPrecedence) {
         parser.Advance();
         ParseFn infixRule = GetRule(parser.previous.type).infix;
-        (this->*infixRule)();
+        (this->*infixRule)(canAssign);
+    }
+
+    if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
+        parser.Error("Invalid assignment target.");
     }
 }
 

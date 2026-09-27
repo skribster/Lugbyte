@@ -23,6 +23,7 @@ static bool IsFalsy(Value value) {
 
 VMCore::VMCore() 
 : strings(*this) 
+, globals(*this)
 {
     ResetStack();
 }
@@ -91,6 +92,7 @@ void VMCore::Concatenate() {
 void VMCore::Run() {
     #define READ_BYTE() (*ip++)
     #define READ_CONSTANT() (chunk->constants.values[READ_BYTE()])
+    #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
 
     #define BINARY_OP(op)                               \
     do {                                                \
@@ -251,41 +253,72 @@ void VMCore::Run() {
             DISPATCH();
         }
 
-        CASE(RETURN): {
+        CASE(DEFINE_GLOBAL): {
+            /*
+                The operand of DEFINE_GLOBAL is a
+                string constant, or the name of the
+                global. The value of the global
+                is the value on top of the stack.
+            */
+            ObjString* string = READ_STRING();
+            globals.Set(string, Peek(0));
+            Pop();
+
+            DISPATCH();
+        }
+
+        CASE(GET_GLOBAL): {
+            ObjString* name = READ_STRING();
+            Value* value = globals.Get(name);
+
+            if (value == nullptr) {
+                RuntimeError("Undefined variable '%s'.", name->characters);
+            }
+
+            Push(*value);
+            DISPATCH();
+        }
+        
+        CASE(SET_GLOBAL): {
+            ObjString* name = READ_STRING();
+
+            // We assign the name to the value at the top of the stack.
+            Value& value = Peek(0);
+            bool isNewKey = globals.Set(name, value);
+            if (isNewKey) {
+                globals.Delete(name);
+            }
+
+            DISPATCH();
+        }
+
+        CASE(POP): {
+            Pop();
+            DISPATCH();
+        }
+
+        CASE(PRINT): {
             Value::Print(Pop());
             std::printf("\n");
+            
+            DISPATCH();
+        }
+
+        CASE(RETURN): {
             return; // Break out of the interpreter loop.
         }
     }
 
     #undef READ_BYTE
     #undef READ_CONSTANT
+    #undef READ_STRING
+
     #undef BINARY_OP
 
     #undef TRACE_EXECUTION 
     #undef DISPATCH
     #undef CASE
     #undef INTERPRET_LOOP
-}
-
-
-void VMCore::RuntimeError(std::string message) {
-    // Get current byte
-    std::size_t byteOffset = static_cast<std::size_t>(ip - chunk->bytecode);
-    std::size_t line = chunk->GetLine(byteOffset);
-
-    std::string errorMessage;
-    errorMessage += "[line ";
-    errorMessage += std::to_string(line);
-    errorMessage += "]\n";
-
-    errorMessage += message;
-
-    LugError error;
-    error.type = ErrorType::RUNTIME;
-    error.message = errorMessage;
-
-    throw error;
 }
 
 

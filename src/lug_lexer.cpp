@@ -228,7 +228,7 @@ bool Lexer::Match(char expected) {
     if (*current != expected) return false;
 
     current++;
-    return false;
+    return true;
 }
 
 
@@ -273,11 +273,20 @@ Token Lexer::ScanToken() {
 
         case '!':
             if (Match('=')) return MakeToken(TokenType::BANG_EQUAL);
+            break; // breaks to LexError
             
         case '<':
-            if (Match('=')) return MakeToken(TokenType::LESS_EQUAL);       // <=
-            else if (Match('-')) return MakeToken(TokenType::LEFT_ARROW);  // <-
-            else return MakeToken(TokenType::LESS);                       // <
+            if (Match('=')) {
+                return MakeToken(TokenType::LESS_EQUAL);  // <=
+            }     
+            else if (Match('-')) {
+                return MakeToken(TokenType::LEFT_ARROW); // <-
+            } 
+            else {
+                return MakeToken(TokenType::LESS);
+            }
+
+            break;
         
         case '>':
             return MakeToken(Match('=') ? TokenType::GREATER_EQUAL : TokenType::GREATER);

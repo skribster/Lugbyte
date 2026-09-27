@@ -7,6 +7,7 @@ namespace Luggage {
 
 void Parser::Reset(const char* source) {
     lexer.Reset(source);
+    Advance();
 }
 
 // PARSER PARSE FUNCTIONS -----------------------------
