@@ -59,6 +59,17 @@ void Chunk::Write(std::uint8_t byte, std::size_t line) {
 
 
 /**
+ * Writes a 16-bit instruction into the bytecode stream. 
+ * This is used for instructions that require 2 bytes of data,
+ * such as an instruction prefixed with OpCode::WIDE
+ */
+void Chunk::WriteShort(std::uint16_t byte, std::size_t line) {
+    Write((byte >> 8) & 0xFF, line);
+    Write(byte & 0xFF, line);
+}
+
+
+/**
  * Adds the given constant into its constant pool
  * and also writes an OP_CONSTANT instruction
  * in its bytecode stream to load it during

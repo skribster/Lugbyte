@@ -25,6 +25,31 @@ static std::size_t constantInstruction(const char* name, Chunk& chunk, std::size
     return offset + 2;
 }
 
+
+static int jumpInstruction(const char* name, int sign, Chunk& chunk, int offset) {
+    std::uint16_t jump = (std::uint16_t)(chunk.bytecode[offset + 1] << 8);
+    jump |= chunk.bytecode[offset + 2];
+    std::printf("%-16s %4d -> %d\n", name, offset,
+            offset + 3 + sign * jump);
+    return offset + 3;
+}
+
+
+static int patchInstruction(const char* name, Chunk& chunk, int offset) {
+    std::uint16_t jump = (std::uint16_t)(chunk.bytecode[offset + 1] << 8);
+    jump |= chunk.bytecode[offset + 2];
+
+    if (jump == UINT16_MAX) {
+        std::printf("%-16s %4d -> 'NO_BREAK'\n", name, offset);
+        return offset + 3;
+    }
+
+    std::printf("%-16s %4d -> %d\n", name, offset,
+            offset - jump);
+
+    return offset + 3;
+}
+
 // Debug methods -------------------------
 
 std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
@@ -104,6 +129,22 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_LESS_EQUAL", offset);
         }
 
+        case OpCode::JUMP_IF_FALSE: {
+            return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
+        }   
+
+        case OpCode::JUMP: {
+            return jumpInstruction("OP_JUMP", 1, chunk, offset);
+        }
+
+        case OpCode::LOOP: {
+            return jumpInstruction("OP_LOOP", -1, chunk, offset);
+        }
+
+        case OpCode::PLACEHOLDER: {
+            return patchInstruction("OP_PLACEHOLDER", chunk, offset);
+        }
+
         case OpCode::DEFINE_GLOBAL: {
             return constantInstruction("OP_DEFINE_GLOBAL", chunk, offset);
         }
@@ -115,9 +156,21 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         case OpCode::SET_GLOBAL: {
             return constantInstruction("OP_SET_GLOBAL", chunk, offset);
         }
+        
+        case OpCode::GET_LOCAL: {
+            return constantInstruction("OP_GET_LOCAL", chunk, offset);
+        }
+
+        case OpCode::SET_LOCAL: {
+            return constantInstruction("OP_SET_LOCAL", chunk, offset);
+        }
 
         case OpCode::POP: {
             return simpleInstruction("OP_POP", offset);
+        }
+
+        case OpCode::DUPLICATE: {
+            return simpleInstruction("OP_DUPLICATE", offset);
         }
 
         case OpCode::PRINT: {

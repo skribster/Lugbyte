@@ -6,6 +6,19 @@
 
 namespace Luggage {
 
+bool Token::operator==(const Token& other) const {
+    if (length != other.length) return false;
+    return std::memcmp(start, other.start, length) == 0;
+}
+
+
+Token Token::Synthetic(const char* lexeme) {
+    Token token;
+    token.start = lexeme;
+    token.length = static_cast<std::size_t>(strlen(lexeme));
+
+    return token;
+}
 
 /**
  * For this first prototype, we will use Wren's lexer as a reference for
@@ -26,6 +39,8 @@ static Keyword keywords[] = {
 	{"box",			3,	TokenType::BOX},
 	{"break",		5,	TokenType::BREAK},
 	{"by",			2,	TokenType::BY},
+    {"case",		4,	TokenType::CASE},
+    {"continue",	8,	TokenType::CONTINUE},
 	{"count",		5,	TokenType::COUNT},
 	{"do",			2,	TokenType::DO},
 	{"else",		4,	TokenType::ELSE},
@@ -37,6 +52,7 @@ static Keyword keywords[] = {
 	{"from",		4,	TokenType::FROM},
 	{"if",			2,	TokenType::IF},
 	{"in",			2,	TokenType::IN},
+    {"match",       5,  TokenType::MATCH},
 	{"nil",			3,	TokenType::NIL},
 	{"not",			3,	TokenType::NOT},
 	{"or",			2,	TokenType::OR},
@@ -279,9 +295,11 @@ Token Lexer::ScanToken() {
             if (Match('=')) {
                 return MakeToken(TokenType::LESS_EQUAL);  // <=
             }     
+            
             else if (Match('-')) {
                 return MakeToken(TokenType::LEFT_ARROW); // <-
-            } 
+            }
+            
             else {
                 return MakeToken(TokenType::LESS);
             }

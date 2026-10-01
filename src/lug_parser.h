@@ -11,7 +11,12 @@ public:
 	void Advance();
     void Consume(TokenType type, const char* errorMessage);
     bool Match(TokenType expected);
-    bool Check(TokenType expected);
+
+    template<typename... Args>
+    bool Check(Args... expected) {
+        return ((current.type == expected) || ...);
+    };
+
     bool IsAtEnd();
 
     [[noreturn]] void ErrorAtCurrent(const char* message);

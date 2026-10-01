@@ -103,7 +103,7 @@ ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t len
         the lexeme is part of the greater source string itself,
         which means it's not terminated.
 
-        var variable = 5;
+        box variable <- 5;
             ^^^^^^^^
             const char* chars = ['v', 'a', 'r', 'i', ...] (no \0)
     */

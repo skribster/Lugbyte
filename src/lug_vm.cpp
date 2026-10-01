@@ -93,6 +93,7 @@ void VMCore::Run() {
     #define READ_BYTE() (*ip++)
     #define READ_CONSTANT() (chunk->constants.values[READ_BYTE()])
     #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
+    #define READ_SHORT() ((READ_BYTE() << 8) | READ_BYTE())
 
     #define BINARY_OP(op)                               \
     do {                                                \
@@ -122,10 +123,10 @@ void VMCore::Run() {
         Debug::DisassembleInstruction(                          \
             *chunk, (int)(ip - chunk->bytecode)                 \
         );                                                      \
-    } while (false);
+    } while (false)
 
 #else
-    #define TRACE_EXECUTION do { } while (false);
+    #define TRACE_EXECUTION() do { } while (false)
 #endif
 
 #ifdef USE_COMPUTED_GOTO
@@ -253,6 +254,31 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(JUMP_IF_FALSE): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsFalsy(Peek(0))) {
+                ip += numBytesToJump;
+            }
+            DISPATCH();
+        }
+
+        CASE(JUMP): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            ip += numBytesToJump;
+            DISPATCH();
+        }
+
+        CASE(LOOP): {
+            std::uint16_t numBytesToJumpBack = READ_SHORT();
+            ip -= numBytesToJumpBack;
+            DISPATCH();
+        }
+
+        CASE(PLACEHOLDER): {
+            std::printf("Placeholder found during runtime.");
+            abort();
+        }
+
         CASE(DEFINE_GLOBAL): {
             /*
                 The operand of DEFINE_GLOBAL is a
@@ -292,8 +318,27 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(GET_LOCAL): {
+            std::uint8_t slot = READ_BYTE();
+            Push(stack[slot]);
+
+            DISPATCH();
+        }
+
+        CASE(SET_LOCAL): {
+            std::uint8_t slot = READ_BYTE();
+            stack[slot] = Peek(0);
+            
+            DISPATCH();
+        }
+
         CASE(POP): {
             Pop();
+            DISPATCH();
+        }
+
+        CASE(DUPLICATE): {
+            Push(Peek(0));
             DISPATCH();
         }
 

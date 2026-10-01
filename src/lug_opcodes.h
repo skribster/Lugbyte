@@ -23,11 +23,19 @@
     OPCODE(LESS)                \
     OPCODE(LESS_EQUAL)          \
                                 \
+    OPCODE(JUMP_IF_FALSE)       \
+    OPCODE(JUMP)                \
+    OPCODE(LOOP)                \
+    OPCODE(PLACEHOLDER)         \
+                                \
     OPCODE(DEFINE_GLOBAL)       \
     OPCODE(GET_GLOBAL)          \
     OPCODE(SET_GLOBAL)          \
+    OPCODE(GET_LOCAL)           \
+    OPCODE(SET_LOCAL)           \
                                 \
     OPCODE(POP)                 \
+    OPCODE(DUPLICATE)           \
     OPCODE(PRINT)               \
                                 \
     OPCODE(RETURN)

@@ -42,6 +42,8 @@ enum class TokenType {
     BOX,
     BREAK,
     BY,
+    CASE,
+    CONTINUE,
     COUNT,
     DO,
     ELSE,
@@ -53,6 +55,7 @@ enum class TokenType {
     FROM,
     IF,
     IN,
+    MATCH,
     NIL,
     NOT,
     OR,
@@ -74,6 +77,10 @@ struct Token {
     const char* start{ nullptr };
     std::size_t length{ 0 };
     std::size_t line{ 0 };
+
+    bool operator==(const Token& other) const;
+
+    static Token Synthetic(const char* lexeme);
 };
 
 

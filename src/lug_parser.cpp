@@ -35,11 +35,6 @@ bool Parser::Match(TokenType expected) {
 }
 
 
-bool Parser::Check(TokenType expected) {
-    return current.type == expected;
-}
-
-
 bool Parser::IsAtEnd() {
     return Check(TokenType::END_OF_FILE);
 }
