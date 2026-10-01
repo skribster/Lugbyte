@@ -16,7 +16,7 @@ static std::size_t simpleInstruction(const char* name, std::size_t offset) {
 
 static std::size_t constantInstruction(const char* name, Chunk& chunk, std::size_t offset) {
     std::uint8_t constantIndex = chunk.bytecode[offset + 1];
-    std::printf("%-16s %4d '", name, constantIndex);
+    std::printf("%-20s %4d '", name, constantIndex);
 
     Value::Print(chunk.constants.values[constantIndex]);
 
@@ -29,7 +29,7 @@ static std::size_t constantInstruction(const char* name, Chunk& chunk, std::size
 static int jumpInstruction(const char* name, int sign, Chunk& chunk, int offset) {
     std::uint16_t jump = (std::uint16_t)(chunk.bytecode[offset + 1] << 8);
     jump |= chunk.bytecode[offset + 2];
-    std::printf("%-16s %4d -> %d\n", name, offset,
+    std::printf("%-20s %4d -> %d\n", name, offset,
             offset + 3 + sign * jump);
     return offset + 3;
 }
@@ -40,11 +40,11 @@ static int patchInstruction(const char* name, Chunk& chunk, int offset) {
     jump |= chunk.bytecode[offset + 2];
 
     if (jump == UINT16_MAX) {
-        std::printf("%-16s %4d -> 'NO_BREAK'\n", name, offset);
+        std::printf("%-20s %4d -> 'NO_BREAK'\n", name, offset);
         return offset + 3;
     }
 
-    std::printf("%-16s %4d -> %d\n", name, offset,
+    std::printf("%-20s %4d -> %d\n", name, offset,
             offset - jump);
 
     return offset + 3;
@@ -133,6 +133,14 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
         }   
 
+        case OpCode::JUMP_IF_FALSE_OR_POP: {
+            return jumpInstruction("OP_JUMP_IF_FALSE_OR_POP", 1, chunk, offset);
+        }
+
+        case OpCode::POP_JUMP_IF_FALSE: {
+            return jumpInstruction("OP_POP_JUMP_IF_FALSE", 1, chunk, offset);
+        }
+
         case OpCode::JUMP: {
             return jumpInstruction("OP_JUMP", 1, chunk, offset);
         }
@@ -175,6 +183,14 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
 
         case OpCode::PRINT: {
             return simpleInstruction("OP_PRINT", offset);
+        }
+
+        case OpCode::COUNT_PREP: {
+            return jumpInstruction("OP_COUNT_PREP", 1, chunk, offset);
+        }
+
+        case OpCode::COUNT_LOOP: {
+            return jumpInstruction("OP_COUNT_LOOP", -1, chunk, offset);
         }
 
         case OpCode::RETURN: {

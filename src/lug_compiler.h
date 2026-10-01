@@ -29,7 +29,8 @@ public:
 
     void BeginScope();
     void EndScope();
-    std::size_t AddLocal(Token name);
+    void AddLocal(Token name);
+    void AddHiddenLocal(const char* name);
     std::size_t DiscardLocals(std::size_t maxDepth);
     void MarkInitialized();
 
@@ -74,6 +75,8 @@ struct ParseRule {
 
 // Bookkeeping information for the current loop being compiled.
 struct LoopContext {
+    LoopContext(OpCode::Type loopInstruction) : loopInstruction(loopInstruction) {}
+
 	// Sentinel value for the end of the linked list, where there is no other break statement to patch.
 	static constexpr std::size_t END_OF_LIST{ UINT16_MAX };
 
@@ -90,6 +93,9 @@ struct LoopContext {
 	// Depth of the scope(s) that need to be exited if a break is hit inside the
   	// loop
 	std::size_t scopeDepth{ 0 };
+
+    // The loop instruction that will be used to jump back to the start of the loop.
+    OpCode::Type loopInstruction{ OpCode::LOOP };
 
 	// Index of the first instruction of the body of the loop.
 	LoopContext* outerLoop{ nullptr };
@@ -126,7 +132,7 @@ private:
 
     std::size_t EmitJump(OpCode::Type instruction);
     void PatchJump(std::size_t instructionOffset);
-    void EmitLoop(std::size_t loopStart);
+    void EmitLoop(OpCode::Type loopInstruction, std::size_t loopStart);
 
     void StartLoop(LoopContext& loop);
     void EndLoop();
@@ -168,6 +174,7 @@ private:
     void String(bool canAssign);
     void Literal(bool canAssign);
     void Variable(bool canAssign);
+    void NamedVariable(Token& name, bool canAssign);
 
     void ParsePrecedence(Precedence minimumPrecedence);
 

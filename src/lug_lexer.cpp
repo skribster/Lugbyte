@@ -111,7 +111,16 @@ Token Lexer::MakeToken(TokenType type) {
 void Lexer::LexError(const char* message) {
     LugError error;
     error.type = ErrorType::COMPILE;
-    error.message = message;
+    
+    std::string errorMessage;
+    errorMessage += "[line ";
+    errorMessage += std::to_string(line);
+    errorMessage += "] Error at '";
+    errorMessage.append(start, static_cast<std::size_t>(current - start));
+    errorMessage += "': ";
+    errorMessage += message;
+
+    error.message = errorMessage;
 
     throw error;
 }

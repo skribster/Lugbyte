@@ -262,6 +262,25 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(JUMP_IF_FALSE_OR_POP): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsFalsy(Peek(0))) {
+                ip += numBytesToJump;
+            } else {
+                Pop();
+            }
+            DISPATCH();
+        }
+
+        CASE(POP_JUMP_IF_FALSE): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsFalsy(Pop())) {
+                ip += numBytesToJump;
+            }
+
+            DISPATCH();
+        }
+
         CASE(JUMP): {
             std::uint16_t numBytesToJump = READ_SHORT();
             ip += numBytesToJump;
@@ -346,6 +365,69 @@ void VMCore::Run() {
             Value::Print(Pop());
             std::printf("\n");
             
+            DISPATCH();
+        }
+
+        CASE(COUNT_PREP): {
+            std::uint16_t jumpToEnd = READ_SHORT();
+
+            Value start = Peek(2);
+            Value stop = Peek(1);
+            Value step = Peek(0);
+
+            if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
+            if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
+            if (!step.IsNumber()) RuntimeError("'count' step value must be a number.");
+            
+            // Check if the loop would even run at all.
+            if (step.AsNumber() == 0) {
+                RuntimeError("'count' step value cannot be zero.");
+            }
+            
+            // This handles cases like:
+            // count a from 0 to 10 by -1 do ... end
+            // count b from 10 to 0 do ... end
+            // where the loop would never run because the step is in the wrong direction.
+            if (
+                step.AsNumber() > 0 ? 
+                start.AsNumber() > step.AsNumber() :
+                start.AsNumber() < step.AsNumber()
+            ) {
+                ip += jumpToEnd;
+            }
+
+            DISPATCH();
+        }
+
+        CASE(COUNT_LOOP): {
+            /* 
+                When COUNT_LOOP is reached, the stack will look like this:
+                [ 00000 ][ 00005 ][ 00001 ]
+                  ^^^^^    ^^^^^    ^^^^^    ^^^^^
+                  start    limit     step    stackTop
+
+                Where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
+            */
+
+            std::uint16_t jumpToStart = READ_SHORT();
+
+            ASSERT(Peek(0).IsNumber(), "Invalid step");
+            ASSERT(Peek(1).IsNumber(), "Invalid limit");
+
+            if (!Peek(2).IsNumber()) {
+                RuntimeError("'count' step must be a number.");
+            }
+
+            // Increment index.
+            stackTop[-3] = Value(stackTop[-3].AsNumber() + stackTop[-1].AsNumber());
+            if (Peek(0).AsNumber() > 0 ? 
+                Peek(2).AsNumber() <= Peek(1).AsNumber() :
+                Peek(2).AsNumber() >= Peek(1).AsNumber()
+            ) {
+                // Repeat loop
+                ip -= jumpToStart;
+            }
+
             DISPATCH();
         }
 

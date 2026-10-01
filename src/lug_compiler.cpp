@@ -37,7 +37,7 @@ void FunctionUnit::EndScope() {
  * Adds a local and returns the slot where the local resides on the
  * vm's stack.
  */
-std::size_t FunctionUnit::AddLocal(Token name) {
+void FunctionUnit::AddLocal(Token name) {
     if (localCount == UINT8_COUNT) {
         parser.Error("Too many local variables in function.");
     }
@@ -65,17 +65,17 @@ std::size_t FunctionUnit::AddLocal(Token name) {
             */
             break;
         }
-
-        if (name == local.name) {
-            parser.Error("Already a variable with this name in this scope.");
-        }
     }
 
     Local& local = locals[localCount++];
     local.name = name;
     local.depth = scopeDepth;
+}
 
-    return localCount - 1;
+
+void FunctionUnit::AddHiddenLocal(const char* name) {
+    AddLocal(Token::Synthetic(name));
+    compiler.DefineVariable(0);
 }
 
 
@@ -376,7 +376,6 @@ void Compiler::PatchJump(std::size_t instructionOffset) {
      * byte just past the operand. So we have to adjust for it accordingly.
      */
     std::size_t numBytesToJump = CurrentChunk()->byteCount - instructionOffset - 2;
-
     if (numBytesToJump > UINT16_MAX) {
         parser.Error("Too much code to jump over.");
     }
@@ -389,8 +388,8 @@ void Compiler::PatchJump(std::size_t instructionOffset) {
 /**
  * Emits a loop instruction.
  */
-void Compiler::EmitLoop(std::size_t loopStart) {
-    EmitByte(OpCode::LOOP);
+void Compiler::EmitLoop(OpCode::Type loopInstruction, std::size_t loopStart) {
+    EmitByte(loopInstruction);
 
     // Get the amount of bytes between the current byte and the loop start.
     // the +2 is to account for OP_LOOP's operands, which we also need
@@ -436,7 +435,7 @@ void Compiler::StartLoop(LoopContext& loop) {
 
 
 void Compiler::EndLoop() {
-    EmitLoop(currentLoop->start);
+    EmitLoop(currentLoop->loopInstruction, currentLoop->start);
     PatchJump(currentLoop->exitJump);
 
     /*
@@ -448,8 +447,7 @@ void Compiler::EndLoop() {
         need to pop the condition expressions since they already
         popped it off the stack in the loop body. It actually
         jumps to the byte just after OP_POP.
-    */
-    EmitByte(OpCode::POP);
+    */    
     PatchPlaceholders(currentLoop->breakHead, OpCode::JUMP);
     currentLoop = currentLoop->outerLoop;
 }
@@ -645,16 +643,12 @@ void Compiler::BoxStatement() {
 
 
 void Compiler::Block() {
-    currentUnit->BeginScope();
-
     while (!parser.Check(TokenType::END, TokenType::ELSEIF, TokenType::ELSE)) {
         // If we reach a 'return' or 'break', we know that it's
         // the last statement of the block.
         bool isLastStatement = Statement();
         if (isLastStatement) break;
     }
-
-    currentUnit->EndScope();
 }
 
 
@@ -663,8 +657,7 @@ void Compiler::IfStatement() {
     parser.Consume(TokenType::THEN, "Expected 'then' after condition.");
 
     // Then clause
-    std::size_t jumpOverThen = EmitJump(OpCode::JUMP_IF_FALSE);
-    EmitByte(OpCode::POP); // Pop the value of the condition.
+    std::size_t jumpOverThen = EmitJump(OpCode::POP_JUMP_IF_FALSE);
     Block();
 
     // Once the 'then' block runs, jump past any elseif/else branches.
@@ -672,7 +665,6 @@ void Compiler::IfStatement() {
 
     // Else clause
     PatchJump(jumpOverThen);
-    EmitByte(OpCode::POP);
     
     if (parser.Match(TokenType::ELSEIF)) {
         /*
@@ -706,7 +698,9 @@ void Compiler::IfStatement() {
         return;
 
     }  else if (parser.Match(TokenType::ELSE)) {
+        currentUnit->BeginScope();
         Block();
+        currentUnit->EndScope();
     }
 
     PatchJump(jumpToEnd);
@@ -715,17 +709,19 @@ void Compiler::IfStatement() {
 
 
 void Compiler::WhileStatement() {
-    LoopContext loop;
+    LoopContext loop(OpCode::LOOP);
     StartLoop(loop);
 
     // Loop condition
     Expression();
-    loop.exitJump = EmitJump(OpCode::JUMP_IF_FALSE);
+    loop.exitJump = EmitJump(OpCode::POP_JUMP_IF_FALSE);
     parser.Consume(TokenType::DO, "Expected 'do' after while condition.");
-
+    
     // Inside loop
-    EmitByte(OpCode::POP);
+    currentUnit->BeginScope();
     Block();
+    currentUnit->EndScope();
+
     parser.Consume(TokenType::END, "Expected 'end' after while loop.");
 
     EndLoop();
@@ -749,11 +745,12 @@ void Compiler::MatchStatement() {
         EmitByte(OpCode::DUPLICATE);
         Expression();
         EmitByte(OpCode::EQUAL);
-        currentCaseJump = EmitJump(OpCode::JUMP_IF_FALSE);
+        currentCaseJump = EmitJump(OpCode::POP_JUMP_IF_FALSE);
 
-        EmitByte(OpCode::POP);
-
+        currentUnit->BeginScope();
         Block();
+        currentUnit->EndScope();
+
         parser.Consume(TokenType::END, "Expected 'end' after case body.");
 
         AddPlaceholder(&caseHead);
@@ -763,18 +760,16 @@ void Compiler::MatchStatement() {
 
     if (currentCaseJump != -1) {
         PatchJump(currentCaseJump);
-        EmitByte(OpCode::POP);
     }
 
     PatchPlaceholders(caseHead, OpCode::JUMP);
-
-    EmitByte(OpCode::POP);
 }
 
 
 void Compiler::CountStatement() {
     // count <identifier> from <expression> to <expression [by <expression>] do ... end
-    LoopContext loop;
+
+    LoopContext loop{ OpCode::COUNT_LOOP };
 
     currentUnit->BeginScope();
 
@@ -793,7 +788,7 @@ void Compiler::CountStatement() {
     // Condition --------------------------
     parser.Consume(TokenType::TO, "Expected 'to' after start value.");
     Expression();
-    std::size_t condition = currentUnit->AddLocal(Token::Synthetic(" condition"));
+    currentUnit->AddHiddenLocal("$limit");
 
     // Step --------------------------
     if (parser.Match(TokenType::BY)) {
@@ -802,48 +797,18 @@ void Compiler::CountStatement() {
         EmitConstant(1);
     }
 
-    std::size_t step = currentUnit->AddLocal(Token::Synthetic(" step"));
+    currentUnit->AddHiddenLocal("$step");
+
+    // Check at runtime whether these values are 
+    // valid (if they're numbers, if they run, etc.)
+    loop.exitJump = EmitJump(OpCode::COUNT_PREP);
     
     // Actual loop body --------------------------
-    
-    // The loop starts here.
     StartLoop(loop);
 
-    // Check the condition.
-    EmitBytes(OpCode::GET_LOCAL, step);
-    EmitConstant(0);
-    EmitByte(OpCode::GREATER);
-    std::size_t jumpToNeg = EmitJump(OpCode::JUMP_IF_FALSE);
-
-    // If the step is positive, we will check <= to see if the loop should keep running.
-    EmitByte(OpCode::POP);
-    EmitBytes(OpCode::GET_LOCAL, counter);
-    EmitBytes(OpCode::GET_LOCAL, condition);
-    EmitByte(OpCode::LESS_EQUAL);
-    std::size_t jumpToCheck = EmitJump(OpCode::JUMP);
-
-    // Otherwise, we will check >= to see if the loop should keep running.
-    PatchJump(jumpToNeg);
-    EmitByte(OpCode::POP);
-    EmitBytes(OpCode::GET_LOCAL, counter);
-    EmitBytes(OpCode::GET_LOCAL, condition);
-    EmitByte(OpCode::GREATER_EQUAL);
-    
-    // Now we'll check.
-    PatchJump(jumpToCheck);
-    loop.exitJump = EmitJump(OpCode::JUMP_IF_FALSE);
-    EmitByte(OpCode::POP);
-
-    parser.Consume(TokenType::DO, "Expected 'do' after count clauses.");
+    parser.Consume(TokenType::DO, "Expected 'do' after count statement.");
     Block();
-    parser.Consume(TokenType::END, "Expected 'end' after loop body.");
-
-    // Increment the counter
-    EmitBytes(OpCode::GET_LOCAL, counter);
-    EmitBytes(OpCode::GET_LOCAL, step);
-    EmitByte(OpCode::ADD);
-    EmitBytes(OpCode::SET_LOCAL, counter);
-    EmitByte(OpCode::POP);
+    parser.Consume(TokenType::END, "Expected 'end' after count statement.");
 
     EndLoop();
 
@@ -871,8 +836,8 @@ void Compiler::ContinueStatement() {
         To continue, we need to discard any locals that are in the
         current scope of the loop.
     */
-    currentUnit->DiscardLocals(currentLoop->scopeDepth);
-    EmitLoop(currentLoop->start);
+    currentUnit->DiscardLocals(currentLoop->scopeDepth + 1);
+    EmitLoop(currentLoop->loopInstruction, currentLoop->start);
 }
 
 
@@ -1092,8 +1057,13 @@ void Compiler::Literal(bool canAssign) {
  * Handles a variable expression
  */
 void Compiler::Variable(bool canAssign) {
-    OpCode::Type getOp, setOp;
     Token& name = parser.previous;
+    NamedVariable(name, canAssign);
+}
+
+
+void Compiler::NamedVariable(Token& name, bool canAssign) {
+    OpCode::Type getOp, setOp;
 
     /*
         If 'name' is a local variable, arg will be the slot index
