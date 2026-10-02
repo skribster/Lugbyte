@@ -209,6 +209,16 @@ void Lexer::SkipWhitespace() {
                 Advance();
                 break;
 
+            case '/':
+                if (PeekNext() == '/') {
+                    // A comment goes until the end of the line.
+                    while (Peek() != '\n' && !IsAtEnd()) Advance();
+                } else {
+                    return;
+                }
+                
+                break;
+
             default:
                 return;
         }

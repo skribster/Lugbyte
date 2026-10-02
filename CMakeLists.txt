@@ -35,3 +35,9 @@ target_sources(luggage
 )
 
 target_link_libraries(luggage PRIVATE luggage_core)
+
+#-------- TESTS --------
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

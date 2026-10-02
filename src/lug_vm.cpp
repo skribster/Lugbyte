@@ -330,8 +330,10 @@ void VMCore::Run() {
             // We assign the name to the value at the top of the stack.
             Value& value = Peek(0);
             bool isNewKey = globals.Set(name, value);
+            
             if (isNewKey) {
                 globals.Delete(name);
+                RuntimeError("Undefined variable '%s'.", name->characters);
             }
 
             DISPATCH();

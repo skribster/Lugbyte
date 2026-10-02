@@ -999,6 +999,7 @@ void Compiler::Binary(bool canAssign) {
 
     switch (operatorType) {
         case TokenType::EQUAL:          EmitByte(OpCode::EQUAL); break;
+        case TokenType::BANG_EQUAL:     EmitBytes(OpCode::EQUAL, OpCode::NOT); break; 
         case TokenType::GREATER:        EmitByte(OpCode::GREATER); break;
         case TokenType::GREATER_EQUAL:  EmitByte(OpCode::GREATER_EQUAL); break;
         case TokenType::LESS:           EmitByte(OpCode::LESS); break;

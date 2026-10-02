@@ -1,5 +1,6 @@
 #pragma once
 
+// ESSENTIAL HEADERS -------------------------------------------
 // std::uintx_t
 #include <cstdint>
 // std::size_t
@@ -7,8 +8,7 @@
 // std::abort, std::malloc, std::calloc, etc.
 #include <cstdlib>
 
-// #define LUG_DEBUG_TRACE_EXECUTION
-// #define LUG_DEBUG_PRINT_CODE
+
 #define UINT8_COUNT UINT8_MAX + 1
 
 
@@ -17,8 +17,11 @@
 #endif
 
 
-#if defined(NDEBUG) || defined(_DEBUG)
+#ifndef NDEBUG
     #include <cstdio>
+
+     #define LUG_DEBUG_TRACE_EXECUTION
+     #define LUG_DEBUG_PRINT_CODE
 
     #define ASSERT(condition, message)                                                  \
         do                                                                              \
@@ -40,7 +43,14 @@
         } while (false)
     
 #else
-    #define ASSERT(condition, message) do { } while (false);
-    #define UNREACHABLE()
+    #define ASSERT(condition, message) do { } while (false)
+    
+    #if defined(_MSC_VER) && !defined(__clang__) // MSVC
+        #define UNREACHABLE() __assume(false);
+    #elif defined(__GNUC__) || defined(__clang__) // GCC, Clang
+        #define UNREACHABLE() __builtin_unreachable();
+    #else
+        #define UNREACHABLE() do { } while (false)
+    #endif
 
 #endif

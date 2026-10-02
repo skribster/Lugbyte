@@ -10,7 +10,7 @@
 static void Repl(Luggage::VM& vm) {
     std::string line;
     while (true) {
-        std::printf("> ");
+        std::cout << "> ";
         std::getline(std::cin, line);
 
         if (line.empty()) break;
@@ -27,7 +27,7 @@ static void Repl(Luggage::VM& vm) {
 static std::string ReadFile(std::string_view path) {
     std::ifstream file(path.data());
     if (!file.is_open()) {
-        std::fprintf(stderr, "Could not open file: %s\n", path.data());
+        std::cerr << "Could not open file: %s\n" << path;
         exit(74);
     }
 
@@ -60,7 +60,7 @@ int main(int argc, char* argv[]){
     } else if (argc == 2) {
         RunFile(vm, argv[1]);
     } else {
-        std::fprintf(stderr, "Usage: luggage [path]\n");
+        std::cerr << "Usage: luggage [path]\n";
         exit(64);
     }
 
