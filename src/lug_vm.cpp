@@ -223,6 +223,10 @@ void VMCore::Run() {
         }
 
         CASE(DIVIDE): {
+            if (Peek(0).IsNumber() && Peek(0).AsNumber() == 0) {
+                RuntimeError("Can't divide by zero.");
+            }
+
             BINARY_OP(/);
             DISPATCH();
         }

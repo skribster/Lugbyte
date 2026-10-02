@@ -1,0 +1,25 @@
+// False and nil are false.
+if false then 
+    print "bad"
+else 
+    print "false"
+end // expect: false
+
+if nil then
+    print "bad"
+else 
+    print "nil"
+end // expect: nil
+
+// Everything else is true.
+if true then 
+    print true
+end // expect: true
+
+if 0 then 
+    print 0
+end // expect: 0
+
+if "" then 
+    print "empty"
+end // expect: empty

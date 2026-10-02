@@ -1,0 +1,1 @@
+print 1 / 0     // Expect runtime error: Can't divide by zero.
