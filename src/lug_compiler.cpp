@@ -454,6 +454,14 @@ void Compiler::EndLoop() {
 
 
 /**
+ * Creates a new placeholder list.
+ */
+std::size_t Compiler::PlaceholderList() {
+    return UINT16_MAX;
+}
+
+
+/**
  * Patches all the break statements that emitted an OP_PLACEHOLDER
  * with actual OP_JUMP instructions that jump out of the loop.
  */
@@ -472,16 +480,16 @@ void Compiler::PatchPlaceholders(std::size_t firstPlaceholder, OpCode::Type inst
 
         e.g. the bytecode stream might look like:
 
-        PATCH NO_BREAK  // There is no placeholder after this one. 
+        PLACEHOLDER UINT16_MAX      // There is no placeholder after this one. 
         .
         . 
-        PATCH 3         // 3 bytes before this, there is another patch placeholder.
+        PLACEHOLDER 3               // 3 bytes before this, there is another patch placeholder.
         . 
         .
         .
         .
         .
-        PATCH 6         // 6 bytes before this, there is another patch placeholder.
+        PLACEHOLDER 6               // 6 bytes before this, there is another patch placeholder.
 
         We will go from the bottom patch up to the top, filling their operand with
         the correct number of bytes to skip to exit the loop. We will then use the old
@@ -593,8 +601,8 @@ bool Compiler::Statement() {
         WhileStatement();
     }
 
-    else if (parser.Match(TokenType::MATCH)) {
-        MatchStatement();
+    else if (parser.Match(TokenType::INSPECT)) {
+        InspectStatement();
     }
 
     else if (parser.Match(TokenType::COUNT)) {
@@ -728,46 +736,72 @@ void Compiler::WhileStatement() {
 }
 
 
-void Compiler::MatchStatement() {
-    std::size_t caseHead{ UINT16_MAX };
-    int currentCaseJump{ -1 };
+void Compiler::InspectStatement() {
+    std::size_t exitJumps = PlaceholderList();
+    int jumpToNext{ -1 };
 
-    // match <expression> ... end
+    // "inspect" expression
+    // Parse the expression we'll be comparing to.
     Expression();
 
-    while (parser.Match(TokenType::CASE)) {
-        if (currentCaseJump != -1) {
-            PatchJump(currentCaseJump);
-            EmitByte(OpCode::POP);
+    // ( "when" expression ( "when" expression )* "do" block "end" )*
+    while (parser.Match(TokenType::WHEN)) {
+        if (jumpToNext != -1) {
+            PatchJump(jumpToNext);
         }
-        
-        // case <expression> ... end
-        EmitByte(OpCode::DUPLICATE);
-        Expression();
-        EmitByte(OpCode::EQUAL);
-        currentCaseJump = EmitJump(OpCode::POP_JUMP_IF_FALSE);
 
+        std::size_t bodyJumps = PlaceholderList();
+
+        do {
+            // Since 'equal' pops both values off the stack, we actually have to
+            // duplicate the top value of the stack so that the expression that we're
+            // comparing to gets preserved.
+            EmitByte(OpCode::DUPLICATE);
+            Expression();
+            EmitByte(OpCode::EQUAL);
+
+            // POP_JUMP_IF_TRUE
+            AddPlaceholder(&bodyJumps);
+
+        } while (parser.Match(TokenType::WHEN));
+
+        jumpToNext = EmitJump(OpCode::JUMP);
+        PatchPlaceholders(bodyJumps, OpCode::POP_JUMP_IF_TRUE);
+        
+        // Parse the body.
+        parser.Consume(TokenType::DO, "Expected 'do' after case conditions.");
         currentUnit->BeginScope();
         Block();
         currentUnit->EndScope();
+        parser.Consume(TokenType::END, "Expected 'end' after 'when' body.");
 
-        parser.Consume(TokenType::END, "Expected 'end' after case body.");
-
-        AddPlaceholder(&caseHead);
+        // After the block, we want to skip every other case.
+        AddPlaceholder(&exitJumps);
     }
 
-    parser.Consume(TokenType::END, "Expected 'end' after match statement.");
-
-    if (currentCaseJump != -1) {
-        PatchJump(currentCaseJump);
+    if (jumpToNext != -1) PatchJump(jumpToNext);
+    
+    // Check for an optional 'catch-all' else clause.
+    // ( "else" block "end" )?
+    if (parser.Match(TokenType::ELSE)) {
+        currentUnit->BeginScope();
+        Block();
+        currentUnit->EndScope();
+        parser.Consume(TokenType::END, "Expected 'end' after else body.");
     }
+    
+    // After all the when statements, we want to patch all the end-of-when jumps
+    PatchPlaceholders(exitJumps, OpCode::JUMP);
+    
+    // To get rid of the original expression we compared to.
+    EmitByte(OpCode::POP);
 
-    PatchPlaceholders(caseHead, OpCode::JUMP);
+    parser.Consume(TokenType::END, "Expected 'end' after 'when' clauses.");
 }
 
 
 void Compiler::CountStatement() {
-    // count <identifier> from <expression> to <expression [by <expression>] do ... end
+    // 'count' identifier 'from' expression 'to' expression 'by' expression 'do' block 'end'
 
     LoopContext loop{ OpCode::COUNT_LOOP };
 
@@ -889,11 +923,10 @@ const ParseRule Compiler::rules[] = {
     { &Compiler::Number,        nullptr,                Precedence::NONE },             // NUMBER
 
     // Keywords         
-    { nullptr,                  nullptr,                Precedence::NONE },             // AND
+    { nullptr,                  &Compiler::And,         Precedence::AND },              // AND
     { nullptr,                  nullptr,                Precedence::NONE },             // BOX
     { nullptr,                  nullptr,                Precedence::NONE },             // BREAK
     { nullptr,                  nullptr,                Precedence::NONE },             // BY
-    { nullptr,                  nullptr,                Precedence::NONE },             // CASE
     { nullptr,                  nullptr,                Precedence::NONE },             // CONTINUE
     { nullptr,                  nullptr,                Precedence::NONE },             // COUNT
     { nullptr,                  nullptr,                Precedence::NONE },             // DO
@@ -906,10 +939,10 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // FROM
     { nullptr,                  nullptr,                Precedence::NONE },             // IF
     { nullptr,                  nullptr,                Precedence::NONE },             // IN
-    { nullptr,                  nullptr,                Precedence::NONE },             // MATCH
+    { nullptr,                  nullptr,                Precedence::NONE },             // INSPECT
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
     { &Compiler::Unary,         nullptr,                Precedence::NONE },             // NOT
-    { nullptr,                  nullptr,                Precedence::NONE },             // OR
+    { nullptr,                  &Compiler::Or,          Precedence::OR },               // OR
     { nullptr,                  nullptr,                Precedence::NONE },             // PRINT
     { nullptr,                  nullptr,                Precedence::NONE },             // RETURN
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARE
@@ -917,6 +950,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // THEN
     { nullptr,                  nullptr,                Precedence::NONE },             // TO
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // TRUE
+    { nullptr,                  nullptr,                Precedence::NONE },             // WHEN
     { nullptr,                  nullptr,                Precedence::NONE },             // WHILE
 
     { nullptr,                  nullptr,                Precedence::NONE },             // END_OF_FILE
@@ -1012,6 +1046,41 @@ void Compiler::Binary(bool canAssign) {
 
         default: UNREACHABLE(); // Unreachable.
     }
+}
+
+
+/**
+ * Parses an 'and' expression.
+ * <left> and <right>
+ */
+void Compiler::And(bool canAssign) {
+    // At this point, we already compiled the lefthand prefix 
+    // expression. If it's false, we can just jump over compiling
+    // the right hand side, and leave the lefthand side value
+    // on the stack.
+    std::size_t endJump = EmitJump(OpCode::JUMP_IF_FALSE_OR_POP);
+
+    // If it's true, however, get rid of the left hand side
+    // and parse the right hand side, placing it on the stack.
+    ParsePrecedence(Precedence::AND);
+
+    PatchJump(endJump);
+}
+
+/**
+ * Parses an 'or' expression.
+ * <left> or <right>
+ */
+void Compiler::Or(bool canAssign) {
+    // If the lefthand expression is true, jump to the end and 
+    // leave the lefthand value on the stack.
+    std::size_t endJump = EmitJump(OpCode::JUMP_IF_TRUE_OR_POP);
+    
+    // If it's false, however, get rid of the left hand side
+    // and parse the right hand side, placing it on the stack.
+    ParsePrecedence(Precedence::OR);
+
+    PatchJump(endJump);
 }
 
 

@@ -42,7 +42,6 @@ enum class TokenType {
     BOX,
     BREAK,
     BY,
-    CASE,
     CONTINUE,
     COUNT,
     DO,
@@ -55,7 +54,7 @@ enum class TokenType {
     FROM,
     IF,
     IN,
-    MATCH,
+    INSPECT,
     NIL,
     NOT,
     OR,
@@ -66,6 +65,7 @@ enum class TokenType {
     THEN,
     TO,
     TRUE,
+    WHEN,
     WHILE,
 
     END_OF_FILE

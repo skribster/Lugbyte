@@ -132,13 +132,25 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         case OpCode::JUMP_IF_FALSE: {
             return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
         }   
+        
+        case OpCode::JUMP_IF_TRUE: {
+            return jumpInstruction("OP_JUMP_IF_TRUE", 1, chunk, offset);
+        }
 
         case OpCode::JUMP_IF_FALSE_OR_POP: {
             return jumpInstruction("OP_JUMP_IF_FALSE_OR_POP", 1, chunk, offset);
         }
 
+        case OpCode::JUMP_IF_TRUE_OR_POP: {
+            return jumpInstruction("OP_JUMP_IF_TRUE_OR_POP", 1, chunk, offset);
+        }
+
         case OpCode::POP_JUMP_IF_FALSE: {
             return jumpInstruction("OP_POP_JUMP_IF_FALSE", 1, chunk, offset);
+        }
+
+        case OpCode::POP_JUMP_IF_TRUE: {
+            return jumpInstruction("OP_POP_JUMP_IF_TRUE", 1, chunk, offset);
         }
 
         case OpCode::JUMP: {

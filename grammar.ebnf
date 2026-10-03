@@ -1,0 +1,55 @@
+/* Statements */
+statement           ::= variable
+                      | print
+                      | break
+                      | continue
+                      | block
+                      | if
+                      | while
+                      | for
+                      | count
+
+variable            ::= 'box' identifier '<-' expression
+print               ::= 'print' expression /* For testing purposes, will move into the stdlib later */
+break               ::= 'break'
+continue            ::= 'continue'
+block               ::= statement* ( 'return' expression )?
+if                  ::= 'if' expression 'then' block ('elseif' expression 'then' block)* ('else' block)? 'end'
+while               ::= 'while' expression 'do' block 'end'
+for                 ::= 'foreach' expression ( 'at' expression )? 'in' expression 'do' block 'end'
+count               ::= 'count' identifier 'from' expression 'to' expression 'by' expression 'do' block 'end'
+inspect             ::= "inspect" expression ( "when" expression ( "when" expression )* "do" block "end" )* ( "else" block "end" )? "end"
+
+/* Expressions */
+expression          ::= ternary
+ternary             ::= logic_or '?' expression ':' ternary
+logic_or            ::= logic_and ('or' logic_and)*
+logic_and           ::= equality ('and' equality)*
+equality            ::= comparison ( ('!=' | '=') comparison )* 
+comparison          ::= term ( ('>' | '>=' | '<' | '<=') term )*
+term                ::= factor ( ('-' | '+') factor )*
+factor              ::= unary ( ('*' | '/') unary )*
+unary               ::= ('not' | '-') unary | primary
+/*                               indexing list/dict    getting field    calling a function */
+postfix             ::= primary ( "[" expression "]" | "." IDENTIFIER | "(" arguments? ")" )*
+primary             ::= 'null' 
+                      | BOOLEAN
+                      | NUMBER
+                      | STRING
+                      | IDENTIFIER
+                      | '(' expression ')'
+                      | function
+                      | list
+                      | dictionary
+
+function            ::= 'function' '(' parameters? ')' block 'end'
+list                ::= '[' expression_list? ']'
+dict                ::= '{' keyvalue_list? '}'
+
+/* Utility rules */
+arguments           ::= expression ( ',' expression )*
+parameters          ::= IDENTIFIER ( "," IDENTIFIER )*
+
+expression_list     ::= expression (',' expression)*
+keyvalue_list       ::= keyvalue_pair (',' keyvalue_pair)*
+keyvalue_pair       ::= expression ":" expression

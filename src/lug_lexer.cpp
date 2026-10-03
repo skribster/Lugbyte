@@ -39,7 +39,6 @@ static Keyword keywords[] = {
 	{"box",			3,	TokenType::BOX},
 	{"break",		5,	TokenType::BREAK},
 	{"by",			2,	TokenType::BY},
-    {"case",		4,	TokenType::CASE},
     {"continue",	8,	TokenType::CONTINUE},
 	{"count",		5,	TokenType::COUNT},
 	{"do",			2,	TokenType::DO},
@@ -52,7 +51,7 @@ static Keyword keywords[] = {
 	{"from",		4,	TokenType::FROM},
 	{"if",			2,	TokenType::IF},
 	{"in",			2,	TokenType::IN},
-    {"match",       5,  TokenType::MATCH},
+	{"inspect",		7,	TokenType::INSPECT},
 	{"nil",			3,	TokenType::NIL},
 	{"not",			3,	TokenType::NOT},
 	{"or",			2,	TokenType::OR},
@@ -63,7 +62,8 @@ static Keyword keywords[] = {
 	{"then",		4,	TokenType::THEN},
 	{"to",			2,	TokenType::TO},
 	{"true",		4,	TokenType::TRUE},
-	{"while",		5,	TokenType::WHILE}
+	{"while",		5,	TokenType::WHILE},
+	{"when",		4,	TokenType::WHEN},
 };
 
 // Helper functions -----------------------------

@@ -24,8 +24,11 @@
     OPCODE(LESS_EQUAL)              \
                                     \
     OPCODE(JUMP_IF_FALSE)           \
+    OPCODE(JUMP_IF_TRUE)            \
     OPCODE(JUMP_IF_FALSE_OR_POP)    \
+    OPCODE(JUMP_IF_TRUE_OR_POP)     \
     OPCODE(POP_JUMP_IF_FALSE)       \
+    OPCODE(POP_JUMP_IF_TRUE)        \
     OPCODE(JUMP)                    \
     OPCODE(LOOP)                    \
     OPCODE(PLACEHOLDER)             \

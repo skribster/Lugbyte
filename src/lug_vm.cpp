@@ -19,6 +19,11 @@ static bool IsFalsy(Value value) {
 }
 
 
+static inline bool IsTruthy(Value value) {
+    return !IsFalsy(value);
+}
+
+
 // VMCore methods -----------------------------------
 
 VMCore::VMCore() 
@@ -266,6 +271,14 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(JUMP_IF_TRUE): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsTruthy(Peek(0))) {
+                ip += numBytesToJump;
+            }
+            DISPATCH();
+        }
+
         CASE(JUMP_IF_FALSE_OR_POP): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Peek(0))) {
@@ -276,9 +289,28 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(JUMP_IF_TRUE_OR_POP): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsTruthy(Peek(0))) {
+                ip += numBytesToJump;
+            } else {
+                Pop();
+            }
+            DISPATCH();
+        }
+
         CASE(POP_JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Pop())) {
+                ip += numBytesToJump;
+            }
+
+            DISPATCH();
+        }
+
+        CASE(POP_JUMP_IF_TRUE): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            if (IsTruthy(Pop())) {
                 ip += numBytesToJump;
             }
 

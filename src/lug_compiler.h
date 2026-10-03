@@ -136,6 +136,7 @@ private:
 
     void StartLoop(LoopContext& loop);
     void EndLoop();
+    std::size_t PlaceholderList();
     void PatchPlaceholders(std::size_t firstPlaceholder, OpCode::Type instruction);
     void AddPlaceholder(std::size_t* placeholderListHead);
     std::uint16_t ReadShortOperand(std::size_t instructionOffset);
@@ -159,7 +160,8 @@ private:
     void IfStatement();
     void WhileStatement();
     void BreakStatement();
-    void MatchStatement();
+    void InspectStatement();
+    void WhenStatement();
     void CountStatement();
     void ContinueStatement();
     void ExpressionStatement();
@@ -170,6 +172,8 @@ private:
     void Grouping(bool canAssign);
     void Unary(bool canAssign);
     void Binary(bool canAssign);
+    void And(bool canAssign);
+    void Or(bool canAssign);
     void Number(bool canAssign);
     void String(bool canAssign);
     void Literal(bool canAssign);
