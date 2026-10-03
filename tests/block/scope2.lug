@@ -1,0 +1,20 @@
+box a <- "global a"
+box b <- "global b"
+box c <- "global c"
+do
+  box a <- "outer a"
+  box b <- "outer b"
+  do
+    box a <- "inner a"
+    print a
+    print b
+    print c
+  end
+  print a
+  print b
+  print c
+end
+
+print a
+print b
+print c
