@@ -6,15 +6,15 @@ do
   box b <- "outer b"
   do
     box a <- "inner a"
-    print a
-    print b
-    print c
+    print(a)
+    print(b)
+    print(c)
   end
-  print a
-  print b
-  print c
+  print(a)
+  print(b)
+  print(c)
 end
 
-print a
-print b
-print c
+print(a)
+print(b)
+print(c)

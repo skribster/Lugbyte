@@ -32,7 +32,7 @@ static void FreeObject(VMCore& vm, Obj* obj) {
 
 
 void FreeObjects(VMCore& vm) {
-    Obj* object = vm.objects;
+    Obj* object = vm.GetObjects();
     while (object != nullptr) {
         Obj* next = object->next;
         FreeObject(vm, object);

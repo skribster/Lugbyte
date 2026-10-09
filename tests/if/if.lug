@@ -1,16 +1,16 @@
 // Evaluate the 'then' expression if the condition is true.
-if true then print "good" end // expect: good
-if false then print "bad" end
+if true then print("good") end // expect: good
+if false then print("bad") end
 
 // Allow block body.
 if true then 
     do 
-        print "block" 
+        print("block")
     end 
 end // expect: block
 
 // Assignment in if condition.
 box a <- false
 if a <- true then 
-    print a
+    print(a)
 end // expect: true

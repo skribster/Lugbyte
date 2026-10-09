@@ -31,6 +31,8 @@
     OPCODE(POP_JUMP_IF_TRUE)        \
     OPCODE(JUMP)                    \
     OPCODE(LOOP)                    \
+    OPCODE(COUNT_PREP)              \
+    OPCODE(COUNT_LOOP)              \
     OPCODE(PLACEHOLDER)             \
                                     \
     OPCODE(DEFINE_GLOBAL)           \
@@ -41,10 +43,10 @@
                                     \
     OPCODE(POP)                     \
     OPCODE(DUPLICATE)               \
-    OPCODE(PRINT)                   \
                                     \
-    OPCODE(COUNT_PREP)              \
-    OPCODE(COUNT_LOOP)              \
+    OPCODE(PRINT)                   \
+    OPCODE(CALL)                    \
+                                    \
                                     \
     OPCODE(RETURN)
 

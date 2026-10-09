@@ -1,12 +1,12 @@
 // Evaluate the 'else' expression if the condition is false.
 if true then
-    print "good"
+    print("good")
 else 
-    print "bad"
+    print("bad")
 end // expect: good
 
 if false then
-    print "bad"
+    print("bad")
 else 
-    print "good"
+    print("good")
 end // expect: good

@@ -1,0 +1,12 @@
+box isEven <- function(n) 
+    if n = 0 then return true end
+    return isOdd(n - 1)
+end
+
+box isOdd <- function(n)
+    if n = 0 then return false end
+    return isEven(n - 1)
+end
+
+print(isEven(4)) // expect: true
+print(isOdd(3)) // expect: true

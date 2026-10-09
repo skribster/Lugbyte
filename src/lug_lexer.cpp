@@ -55,7 +55,6 @@ static Keyword keywords[] = {
 	{"nil",			3,	TokenType::NIL},
 	{"not",			3,	TokenType::NOT},
 	{"or",			2,	TokenType::OR},
-    {"print",       5,  TokenType::PRINT},
 	{"return",		6,	TokenType::RETURN},
 	{"share",		5,	TokenType::SHARE},
 	{"shared",		6,	TokenType::SHARED},

@@ -10,7 +10,6 @@ statement           ::= variable
                       | count
 
 variable            ::= 'box' identifier '<-' expression
-print               ::= 'print' expression /* For testing purposes, will move into the stdlib later */
 break               ::= 'break'
 continue            ::= 'continue'
 block               ::= statement* ( 'return' expression )?

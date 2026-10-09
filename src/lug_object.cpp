@@ -26,14 +26,14 @@ static T* AllocateObject(VMCore& vm) {
     T* object = new (allocatedMemory) T(vm);
 
     object->size = sizeof(T);
-    object->next = vm.objects;
-    vm.objects = object;
+    vm.AddObject(object);
 
     return object;
 }
 
 
 // Obj methods ------------------------------------
+
 void Obj::Print(Obj* obj) {
     switch (obj->type) {
         case ObjType::STRING: {
@@ -41,6 +41,23 @@ void Obj::Print(Obj* obj) {
             std::printf(string->characters);
 
             break;
+        }
+
+        case ObjType::FUNCTION: {
+            ObjFunction* function = static_cast<ObjFunction*>(obj);
+            if (function->name == nullptr) {
+                std::printf("<script>");
+                return;
+            }
+            
+            function->PrintFunction();
+            
+            break;
+        }
+
+        case ObjType::NATIVE: {
+            std::printf("<native fn>");
+            return;
         }
 
         default: {
@@ -76,7 +93,7 @@ static ObjString* AllocateString(VMCore& vm, char* characters, std::size_t lengt
     string->hash = hash;
 
     // Add the string to the vm's interned string table
-    vm.strings.Set(string, Value::Nil());
+    vm.GetStrings().Set(string, Value::Nil());
 
     return string;
 }
@@ -93,7 +110,7 @@ ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t len
     // Check if the string is already in the vm's string
     // interned hashset. If so, we don't need to allocate
     // anything at all, we can just return it!
-    ObjString* interned = vm.strings.FindString(original, length, hash);
+    ObjString* interned = vm.GetStrings().FindString(original, length, hash);
     if (interned != nullptr) return interned;
     
     /*
@@ -129,7 +146,7 @@ ObjString* ObjString::TakeFrom(VMCore& vm, char* chars, std::size_t length) {
     
     // Check if the string already exists in the 
     // vm's interned-string hashset
-    ObjString* interned = vm.strings.FindString(chars, length, hash);
+    ObjString* interned = vm.GetStrings().FindString(chars, length, hash);
     if (interned != nullptr) {
         Memory::FreeArray<char>(vm, chars, length + 1);
         return interned;
@@ -142,6 +159,42 @@ ObjString* ObjString::TakeFrom(VMCore& vm, char* chars, std::size_t length) {
 ObjString::~ObjString() {
     // +1 for the null terminator at the end
     Memory::FreeArray<char>(vm, characters, length + 1);
+}
+
+
+// ObjFunction methods ------------------------------------
+
+ObjFunction* ObjFunction::New(VMCore& vm) {
+    ObjFunction* function = AllocateObject<ObjFunction>(vm);
+    function->arity = 0;
+    function->name = nullptr;
+
+    return function;
+}
+
+
+ObjFunction::~ObjFunction() {
+
+}
+
+
+void ObjFunction::PrintFunction() {
+    std::printf("<fn %s>", name->characters);
+}
+
+
+// ObjNative methods ------------------------------------
+
+ObjNative* ObjNative::New(VMCore& vm, NativeFn function) {
+    ObjNative* native = AllocateObject<ObjNative>(vm);
+    native->function = function;
+
+    return native;
+}
+
+
+ObjNative::~ObjNative() {
+
 }
 
 

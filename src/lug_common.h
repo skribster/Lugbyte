@@ -20,8 +20,8 @@
 #ifndef NDEBUG
     #include <cstdio>
 
-     #define LUG_DEBUG_TRACE_EXECUTION
-     #define LUG_DEBUG_PRINT_CODE
+    #define LUG_DEBUG_TRACE_EXECUTION
+    #define LUG_DEBUG_PRINT_CODE
 
     #define ASSERT(condition, message)                                                  \
         do                                                                              \

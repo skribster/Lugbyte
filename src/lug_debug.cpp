@@ -50,6 +50,16 @@ static int patchInstruction(const char* name, Chunk& chunk, int offset) {
     return offset + 3;
 }
 
+
+/**
+ * Helper for displaying a 'byte' instruction
+ */
+static std::size_t byteInstruction(const char* name, Chunk& chunk, std::size_t offset) {
+    std::uint16_t slot = chunk.bytecode[offset + 1];
+    std::printf("%-16s %4d\n", name, slot);
+    return offset + 2;
+}
+
 // Debug methods -------------------------
 
 std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
@@ -161,6 +171,14 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return jumpInstruction("OP_LOOP", -1, chunk, offset);
         }
 
+        case OpCode::COUNT_PREP: {
+            return jumpInstruction("OP_COUNT_PREP", 1, chunk, offset);
+        }
+
+        case OpCode::COUNT_LOOP: {
+            return jumpInstruction("OP_COUNT_LOOP", -1, chunk, offset);
+        }
+
         case OpCode::PLACEHOLDER: {
             return patchInstruction("OP_PLACEHOLDER", chunk, offset);
         }
@@ -178,11 +196,11 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         }
         
         case OpCode::GET_LOCAL: {
-            return constantInstruction("OP_GET_LOCAL", chunk, offset);
+            return byteInstruction("OP_GET_LOCAL", chunk, offset);
         }
 
         case OpCode::SET_LOCAL: {
-            return constantInstruction("OP_SET_LOCAL", chunk, offset);
+            return byteInstruction("OP_SET_LOCAL", chunk, offset);
         }
 
         case OpCode::POP: {
@@ -197,12 +215,8 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_PRINT", offset);
         }
 
-        case OpCode::COUNT_PREP: {
-            return jumpInstruction("OP_COUNT_PREP", 1, chunk, offset);
-        }
-
-        case OpCode::COUNT_LOOP: {
-            return jumpInstruction("OP_COUNT_LOOP", -1, chunk, offset);
+        case OpCode::CALL: {
+            return byteInstruction("OP_CALL", chunk, offset);
         }
 
         case OpCode::RETURN: {

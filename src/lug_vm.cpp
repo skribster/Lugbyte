@@ -6,6 +6,8 @@
 #include "lug_compiler.h"
 #include "lug_memory.h"
 
+#include "lug_stdlib.h"
+
 namespace Luggage {
 
 // Helper functions -----------------------------------
@@ -67,6 +69,7 @@ Value VMCore::Pop() {
  */
 void VMCore::ResetStack() {
     stackTop = stack;
+    frameCount = 0;
 }
 
 
@@ -91,12 +94,86 @@ void VMCore::Concatenate() {
 
 
 /**
+ * Defines a single native function as a global with 
+ * the given name.
+ */
+void VMCore::DefineNative(const char* name, NativeFn function) {
+    Push(ObjString::CopyFrom(*this, name, std::strlen(name)));
+    Push(ObjNative::New(*this, function));
+
+    globals.Set(Peek(1).AsObj<ObjString>(), Peek(0));
+
+    Pop();
+    Pop();
+}
+
+
+/**
+ * Adds an object to the VM's object linked list.
+ */
+void VMCore::AddObject(Obj* object) {
+    object->next = objects;
+    objects = object;
+}
+
+
+void VMCore::CallValue(Value value, std::uint8_t argCount) {
+    // We can only call functions.
+    if (!value.IsObj()) {
+        RuntimeError("Can only call functions.");
+    }
+
+    switch (value.AsObj()->type) {
+        case ObjType::FUNCTION: {
+            ObjFunction* callee = value.AsObj<ObjFunction>();
+            Call(callee, argCount);
+            break;
+        }
+
+        case ObjType::NATIVE: {
+            ObjNative* native = value.AsObj<ObjNative>();
+            Value result = native->function(*this, stackTop - argCount, argCount);
+
+            // Rewind the stack right before the ObjNative.
+            stackTop -= argCount + 1;
+
+            // Push the result of the function.
+            Push(result);
+            break;
+        }
+
+        default: {
+            RuntimeError("Can only call functions.");
+        }
+    }
+}
+
+
+void VMCore::Call(ObjFunction* function, std::uint8_t argCount) {
+    if (argCount != function->arity) {
+        RuntimeError("Expected %d arguments but got %d.", function->arity, argCount);
+    }
+
+    if (frameCount == FRAMES_MAX) {
+        RuntimeError("Stack overflow.");
+    }
+
+    CallFrame& frame = frames[frameCount++];
+    frame.function = function;
+    frame.ip = function->chunk.bytecode;
+    frame.slots = stackTop - argCount - 1;
+}
+
+
+/**
  * The actual interpreter loop where it runs 
  * each instruction from its chunk.
  */
 void VMCore::Run() {
-    #define READ_BYTE() (*ip++)
-    #define READ_CONSTANT() (chunk->constants.values[READ_BYTE()])
+    CallFrame* frame = &frames[frameCount - 1];
+
+    #define READ_BYTE() (*frame->ip++)
+    #define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
     #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
     #define READ_SHORT() ((READ_BYTE() << 8) | READ_BYTE())
 
@@ -126,7 +203,8 @@ void VMCore::Run() {
         std::printf("\n");                                      \
                                                                 \
         Debug::DisassembleInstruction(                          \
-            *chunk, (int)(ip - chunk->bytecode)                 \
+            frame->function->chunk,                             \
+            (int)(frame->ip - frame->function->chunk.bytecode)  \
         );                                                      \
     } while (false)
 
@@ -266,7 +344,7 @@ void VMCore::Run() {
         CASE(JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Peek(0))) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             }
             DISPATCH();
         }
@@ -274,7 +352,7 @@ void VMCore::Run() {
         CASE(JUMP_IF_TRUE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsTruthy(Peek(0))) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             }
             DISPATCH();
         }
@@ -282,7 +360,7 @@ void VMCore::Run() {
         CASE(JUMP_IF_FALSE_OR_POP): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Peek(0))) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             } else {
                 Pop();
             }
@@ -292,7 +370,7 @@ void VMCore::Run() {
         CASE(JUMP_IF_TRUE_OR_POP): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsTruthy(Peek(0))) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             } else {
                 Pop();
             }
@@ -302,7 +380,7 @@ void VMCore::Run() {
         CASE(POP_JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Pop())) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             }
 
             DISPATCH();
@@ -311,7 +389,7 @@ void VMCore::Run() {
         CASE(POP_JUMP_IF_TRUE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsTruthy(Pop())) {
-                ip += numBytesToJump;
+                frame->ip += numBytesToJump;
             }
 
             DISPATCH();
@@ -319,13 +397,76 @@ void VMCore::Run() {
 
         CASE(JUMP): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            ip += numBytesToJump;
+            frame->ip += numBytesToJump;
             DISPATCH();
         }
 
         CASE(LOOP): {
             std::uint16_t numBytesToJumpBack = READ_SHORT();
-            ip -= numBytesToJumpBack;
+            frame->ip -= numBytesToJumpBack;
+            DISPATCH();
+        }
+
+        CASE(COUNT_PREP): {
+            std::uint16_t jumpToEnd = READ_SHORT();
+
+            Value start = Peek(2);
+            Value stop = Peek(1);
+            Value step = Peek(0);
+
+            if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
+            if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
+            if (!step.IsNumber()) RuntimeError("'count' step value must be a number.");
+            
+            // Check if the loop would even run at all.
+            if (step.AsNumber() == 0) {
+                RuntimeError("'count' step value cannot be zero.");
+            }
+            
+            // This handles cases like:
+            // count a from 0 to 10 by -1 do ... end
+            // count b from 10 to 0 do ... end
+            // where the loop would never run because the step is in the wrong direction.
+            if (
+                step.AsNumber() > 0 ? 
+                start.AsNumber() > step.AsNumber() :
+                start.AsNumber() < step.AsNumber()
+            ) {
+                frame->ip += jumpToEnd;
+            }
+
+            DISPATCH();
+        }
+
+        CASE(COUNT_LOOP): {
+            /* 
+                When COUNT_LOOP is reached, the stack will look like this:
+                [ 00000 ][ 00005 ][ 00001 ]
+                  ^^^^^    ^^^^^    ^^^^^    ^^^^^
+                  start    limit     step    stackTop
+
+                Where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
+            */
+
+            std::uint16_t jumpToStart = READ_SHORT();
+
+            ASSERT(Peek(0).IsNumber(), "Invalid step");
+            ASSERT(Peek(1).IsNumber(), "Invalid limit");
+
+            if (!Peek(2).IsNumber()) {
+                RuntimeError("'count' step must be a number.");
+            }
+
+            // Increment index.
+            stackTop[-3] = Value(stackTop[-3].AsNumber() + stackTop[-1].AsNumber());
+            if (Peek(0).AsNumber() > 0 ? 
+                Peek(2).AsNumber() <= Peek(1).AsNumber() :
+                Peek(2).AsNumber() >= Peek(1).AsNumber()
+            ) {
+                // Repeat loop
+                frame->ip -= jumpToStart;
+            }
+
             DISPATCH();
         }
 
@@ -377,14 +518,14 @@ void VMCore::Run() {
 
         CASE(GET_LOCAL): {
             std::uint8_t slot = READ_BYTE();
-            Push(stack[slot]);
+            Push(frame->slots[slot]);
 
             DISPATCH();
         }
 
         CASE(SET_LOCAL): {
             std::uint8_t slot = READ_BYTE();
-            stack[slot] = Peek(0);
+            frame->slots[slot] = Peek(0);
             
             DISPATCH();
         }
@@ -406,71 +547,32 @@ void VMCore::Run() {
             DISPATCH();
         }
 
-        CASE(COUNT_PREP): {
-            std::uint16_t jumpToEnd = READ_SHORT();
+        CASE(CALL): {
+            std::uint8_t argCount = READ_BYTE();
 
-            Value start = Peek(2);
-            Value stop = Peek(1);
-            Value step = Peek(0);
+            // Attempt to call the callee, whether it is of any value type.
+            CallValue(Peek(argCount), argCount);
 
-            if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
-            if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
-            if (!step.IsNumber()) RuntimeError("'count' step value must be a number.");
-            
-            // Check if the loop would even run at all.
-            if (step.AsNumber() == 0) {
-                RuntimeError("'count' step value cannot be zero.");
-            }
-            
-            // This handles cases like:
-            // count a from 0 to 10 by -1 do ... end
-            // count b from 10 to 0 do ... end
-            // where the loop would never run because the step is in the wrong direction.
-            if (
-                step.AsNumber() > 0 ? 
-                start.AsNumber() > step.AsNumber() :
-                start.AsNumber() < step.AsNumber()
-            ) {
-                ip += jumpToEnd;
-            }
-
-            DISPATCH();
-        }
-
-        CASE(COUNT_LOOP): {
-            /* 
-                When COUNT_LOOP is reached, the stack will look like this:
-                [ 00000 ][ 00005 ][ 00001 ]
-                  ^^^^^    ^^^^^    ^^^^^    ^^^^^
-                  start    limit     step    stackTop
-
-                Where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
-            */
-
-            std::uint16_t jumpToStart = READ_SHORT();
-
-            ASSERT(Peek(0).IsNumber(), "Invalid step");
-            ASSERT(Peek(1).IsNumber(), "Invalid limit");
-
-            if (!Peek(2).IsNumber()) {
-                RuntimeError("'count' step must be a number.");
-            }
-
-            // Increment index.
-            stackTop[-3] = Value(stackTop[-3].AsNumber() + stackTop[-1].AsNumber());
-            if (Peek(0).AsNumber() > 0 ? 
-                Peek(2).AsNumber() <= Peek(1).AsNumber() :
-                Peek(2).AsNumber() >= Peek(1).AsNumber()
-            ) {
-                // Repeat loop
-                ip -= jumpToStart;
-            }
+            // After we call the value, there will be a new call frame on the 
+            // frame stack. Let's update our pointer to match that.
+            frame = &frames[frameCount - 1];
 
             DISPATCH();
         }
 
         CASE(RETURN): {
-            return; // Break out of the interpreter loop.
+            Value result = Pop();
+            frameCount--;
+            if (frameCount == 0) {
+                Pop();
+                return;
+            }
+
+            stackTop = frame->slots;
+            Push(result);
+            frame = &frames[frameCount - 1];
+
+            DISPATCH(); // Break out of the interpreter loop.
         }
     }
 
@@ -505,13 +607,12 @@ VM::~VM() = default;
  */
 bool VM::Interpret(std::string_view source) {
     Compiler compiler{ *core };
-    Chunk chunk{ *core };
 
     try {
-        compiler.Compile(chunk, source.data());
+        ObjFunction* function = compiler.Compile(source.data());
 
-        core->chunk = &chunk;
-        core->ip = chunk.bytecode;
+        core->Push(Value(function));
+        core->Call(function, 0);
         core->Run();
 
     } catch (LugError error) {
@@ -527,5 +628,22 @@ const LugError& VM::LastError() const {
     return core->lastError;
 }
 
+
+constexpr LibInclude operator|(LibInclude a, LibInclude b) {
+    return static_cast<LibInclude>(
+        static_cast<unsigned int>(a) | static_cast<unsigned int>(b)
+    );
+}
+
+
+constexpr bool operator&(LibInclude a, LibInclude b) {
+    return static_cast<unsigned int>(a) & static_cast<unsigned int>(b);
+}  
+
+
+void VM::LoadLibrary(LibInclude libraries) {
+    if (libraries & LibInclude::NONE) return;
+    if (libraries & LibInclude::BASE) Lib::OpenBase(*core);
+}
 
 }

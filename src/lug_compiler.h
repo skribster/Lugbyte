@@ -23,6 +23,12 @@ struct Local {
 };
 
 
+enum class FunctionType {
+    FUNCTION,
+    SCRIPT
+};
+
+
 class FunctionUnit {
 public:
     FunctionUnit(VMCore& vm, Compiler& compiler, Parser& parser);
@@ -40,6 +46,9 @@ public:
     Local locals[UINT8_COUNT]; 
     std::size_t localCount{ 0 };
     std::size_t scopeDepth{ 0 };
+
+    ObjFunction* function{ nullptr };
+    FunctionType type;
     FunctionUnit* enclosing{ nullptr };
 
 private:
@@ -106,10 +115,9 @@ class Compiler {
 public:
     explicit Compiler(VMCore& vm) : vm(vm) {}
 
-    void Compile(Chunk& chunk, const char* source);
+    ObjFunction* Compile(const char* source);
 
 private:
-    Chunk* compilingChunk{ nullptr };
     FunctionUnit* currentUnit{ nullptr };
     LoopContext* currentLoop{ nullptr };
     Parser parser;
@@ -117,8 +125,8 @@ private:
     bool isValidExprStmt{ false };
 
     Chunk* CurrentChunk() const;
-    void PushUnit(FunctionUnit* unit);
-    void PopUnit();
+    void PushUnit(FunctionUnit* unit, FunctionType type);
+    ObjFunction* PopUnit();
     
     // Bytecode methods
 
@@ -140,7 +148,7 @@ private:
     void PatchPlaceholders(std::size_t firstPlaceholder, OpCode::Type instruction);
     void AddPlaceholder(std::size_t* placeholderListHead);
     std::uint16_t ReadShortOperand(std::size_t instructionOffset);
-    void Compiler::WriteShortOperand(std::size_t instructionOffset, std::uint16_t value);
+    void WriteShortOperand(std::size_t instructionOffset, std::uint16_t value);
 
     std::uint8_t ParseVariable(const char* errorMessage);
     void DeclareVariable();
@@ -161,15 +169,19 @@ private:
     void WhileStatement();
     void BreakStatement();
     void InspectStatement();
-    void WhenStatement();
     void CountStatement();
     void ContinueStatement();
+    void ReturnStatement();
     void ExpressionStatement();
 
     // Expression methods
 
     void Expression();
+
     void Grouping(bool canAssign);
+    void Call(bool canAssign);
+    std::uint8_t ArgumentList();
+
     void Unary(bool canAssign);
     void Binary(bool canAssign);
     void And(bool canAssign);
@@ -177,6 +189,7 @@ private:
     void Number(bool canAssign);
     void String(bool canAssign);
     void Literal(bool canAssign);
+    void Function(bool canAssign);
     void Variable(bool canAssign);
     void NamedVariable(Token& name, bool canAssign);
 

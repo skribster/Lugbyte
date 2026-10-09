@@ -1,7 +1,7 @@
 count a from 1 to 5  do
     count b from 1 to 3 do
-        print a
-        print b
-        print " " // Space character to separate into new lines
+        print(a)
+        print(b)
+        print(" ") // Space character to separate into new lines
     end
 end

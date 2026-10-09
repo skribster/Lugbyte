@@ -13,6 +13,14 @@ enum class ErrorType {
 };
 
 
+enum class LibInclude : unsigned {
+    NONE    = 0,
+    BASE    = 1 << 0,   // 0001
+    MATH    = 1 << 1,   // 0010
+    ALL     = BASE | MATH
+};
+
+
 struct LugError {
     ErrorType type;
     std::string message;
@@ -26,6 +34,8 @@ struct LugError {
  */
 class VMCore;
 
+
+
 /**
  * A virtual machine for executing Luggage bytecode. 
  * It manages the execution state, including the stack, 
@@ -37,7 +47,15 @@ public:
     VM();
     ~VM();
 
-    // void LoadStandardLibraries();
+    /**
+     * Loads the given library into the VM's environment.
+     * This takes in an enum of LibInclude, which you can also
+     * use bitmasking or the | opreator to include multiple 
+     * libraries. For instance, 
+     * LoadLibraries(LibInclude::BASE | LibInclude::MATH) will
+     * include both the base and the math library.
+     */
+    void LoadLibrary(LibInclude libraries);
 
     /*
         Takes in a Luggage program and interprets it. Returns

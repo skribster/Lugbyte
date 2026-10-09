@@ -58,7 +58,6 @@ enum class TokenType {
     NIL,
     NOT,
     OR,
-    PRINT,
     RETURN,
     SHARE,
     SHARED,

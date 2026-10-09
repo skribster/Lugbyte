@@ -3,8 +3,8 @@
 namespace Luggage {
 
 enum class ValueType {
-    BOOLEAN,
     NUMBER,
+    BOOLEAN,
     NIL,
     OBJ,
 

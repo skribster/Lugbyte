@@ -1,9 +1,9 @@
 box a <- "outer"
-print a
+print(a)
 
 do
     box a <- "inner"
-    print a // expect: inner
+    print(a) // expect: inner
 end
 
-print a // expect: outer
+print(a) // expect: outer

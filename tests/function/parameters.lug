@@ -1,0 +1,26 @@
+box f0 <- function() return 0 end
+print(f0()) // expect: 0
+
+box f1 <- function(a) return a end
+print(f1(1)) // expect: 1
+
+box f2 <- function(a, b) return a + b end
+print(f2(1, 2)) // expect: 3
+
+box f3 <- function(a, b, c) return a + b + c end
+print(f3(1, 2, 3)) // expect: 6
+
+box f4 <- function(a, b, c, d) return a + b + c + d end
+print(f4(1, 2, 3, 4)) // expect: 10
+
+box f5 <- function(a, b, c, d, e) return a + b + c + d + e end
+print(f5(1, 2, 3, 4, 5)) // expect: 15
+
+box f6 <- function(a, b, c, d, e, f) return a + b + c + d + e + f end
+print(f6(1, 2, 3, 4, 5, 6)) // expect: 21
+
+box f7 <- function(a, b, c, d, e, f, g) return a + b + c + d + e + f + g end
+print(f7(1, 2, 3, 4, 5, 6, 7)) // expect: 28
+
+box f8 <- function(a, b, c, d, e, f, g, h) return a + b + c + d + e + f + g + h end
+print(f8(1, 2, 3, 4, 5, 6, 7, 8)) // expect: 36

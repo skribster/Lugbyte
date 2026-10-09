@@ -54,6 +54,7 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
 
 int main(int argc, char* argv[]){
     Luggage::VM vm;
+    vm.LoadLibrary(Luggage::LibInclude::NONE);
     
     if (argc == 1) {
         Repl(vm);

@@ -54,7 +54,7 @@ void FunctionUnit::AddLocal(Token name) {
         
         We throw an error.
     */
-    for (std::size_t i = localCount; i > 0; i--) {
+    for (int i = localCount - 1; i >= 0; i--) {
         const Local& local = locals[i];
         if (local.initialized && local.depth < scopeDepth) {
             /*
@@ -64,6 +64,10 @@ void FunctionUnit::AddLocal(Token name) {
                 so we break out of the loop.
             */
             break;
+        }
+
+        if (local.name == name) {
+            parser.Error("Already a variable with this name in this scope.");
         }
     }
 
@@ -163,43 +167,67 @@ void FunctionUnit::MarkInitialized() {
 
 // Compiler public methods -----------------------------
 
-void Compiler::Compile(Chunk& chunk, const char* source) {
+ObjFunction* Compiler::Compile(const char* source) {
     parser.Reset(source);
 
-    compilingChunk = &chunk;
     FunctionUnit unit{ vm, *this, parser };
-    PushUnit(&unit);
+    PushUnit(&unit, FunctionType::SCRIPT);
 
     while (!parser.Match(TokenType::END_OF_FILE)) {
         Statement();
     }
 
-    //! Factor into EndCompiler() when the time is right.
-    EmitReturn();
-#ifdef LUG_DEBUG_PRINT_CODE
-    Debug::DisassembleChunk(*CurrentChunk(), "code");
-#endif
+    ObjFunction* function = PopUnit();
 
-    PopUnit();
-
-    compilingChunk = nullptr;
+    return function;
 }
 
 // Compiler private methods -----------------------------
 
 Chunk* Compiler::CurrentChunk() const {
-    return compilingChunk;
+    return &currentUnit->function->chunk;
 }
 
 
-void Compiler::PushUnit(FunctionUnit* unit) {
+void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
+    unit->function = ObjFunction::New(vm);
+    unit->type = type;
+    
+    if (type != FunctionType::SCRIPT) {
+        unit->function->name = ObjString::CopyFrom(vm, "anonymous", 9);
+    }
+
+    /*
+        The first slot of the unit will be reserved for storing
+        the ObjFunction* on the stack. We add a hidden local to 
+        reserve an empty slot there.
+    */
+    Local& local = unit->locals[unit->localCount++];
+    local.depth = 0;
+    local.name.start = "";
+    local.name.length = 0;
+    
     unit->enclosing = currentUnit;
     currentUnit = unit;
 }
 
 
-void Compiler::PopUnit() {
+ObjFunction* Compiler::PopUnit() {
+    EmitReturn();
+
+    ObjFunction* function = currentUnit->function;
+#ifdef LUG_DEBUG_PRINT_CODE
+    Debug::DisassembleChunk(
+        *CurrentChunk(), 
+        function->name != nullptr 
+        ? function->name->characters 
+        : "<script>"
+    );
+#endif
+
+    // Remove the unit from the unit linked list
     currentUnit = currentUnit->enclosing;
+    return function;
 }
 
 
@@ -234,6 +262,7 @@ void Compiler::EmitShort(std::uint16_t byte) {
  * the current chunk's bytecode array
  */
 void Compiler::EmitReturn() {
+    EmitByte(OpCode::NIL);
     EmitByte(OpCode::RETURN);
 }
 
@@ -245,7 +274,10 @@ void Compiler::EmitReturn() {
  * the constant in the constant pool
  */
 void Compiler::EmitConstant(Value value) {
-    CurrentChunk()->WriteConstant(value, parser.previous.line);
+    std::uint8_t constantIndex = MakeConstant(value);
+
+    CurrentChunk()->Write(OpCode::CONSTANT, parser.previous.line);
+    CurrentChunk()->Write(constantIndex, parser.previous.line);
 }
 
 
@@ -578,11 +610,7 @@ void Compiler::AddPlaceholder(std::size_t* placeholderListHead) {
 bool Compiler::Statement() {
     bool lastStatement = false;
 
-    if (parser.Match(TokenType::PRINT)) {
-        PrintStatement();    
-    } 
-
-    else if (parser.Match(TokenType::BOX)) {
+    if (parser.Match(TokenType::BOX)) {
         BoxStatement();
     }
 
@@ -616,6 +644,11 @@ bool Compiler::Statement() {
     
     else if (parser.Match(TokenType::CONTINUE)) {
         ContinueStatement();
+        lastStatement = true;
+    }
+
+    else if (parser.Match(TokenType::RETURN)) {
+        ReturnStatement();
         lastStatement = true;
     }
 
@@ -875,6 +908,20 @@ void Compiler::ContinueStatement() {
 }
 
 
+void Compiler::ReturnStatement() {
+    if (currentUnit->type == FunctionType::SCRIPT) {
+        parser.Error("Cannot return from top-level code.");
+    }
+
+    if (!parser.Check(TokenType::END, TokenType::ELSEIF, TokenType::ELSE)) {
+        Expression();
+        EmitByte(OpCode::RETURN);
+    } else {
+        EmitReturn();
+    }
+}
+
+
 void Compiler::ExpressionStatement() {
     isValidExprStmt = false;
     Expression();
@@ -891,7 +938,7 @@ void Compiler::ExpressionStatement() {
 
 const ParseRule Compiler::rules[] = {
     // Single-character tokens
-    { &Compiler::Grouping,      nullptr,                Precedence::NONE },             // LEFT_PAREN
+    { &Compiler::Grouping,      &Compiler::Call,        Precedence::CALL },             // LEFT_PAREN
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_PAREN
     { nullptr,                  nullptr,                Precedence::NONE },             // LEFT_BRACE
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACE
@@ -934,7 +981,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // ELSEIF
     { nullptr,                  nullptr,                Precedence::NONE },             // END
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // FALSE
-    { nullptr,                  nullptr,                Precedence::NONE },             // FUNCTION
+    { &Compiler::Function,      nullptr,                Precedence::NONE },             // FUNCTION
     { nullptr,                  nullptr,                Precedence::NONE },             // FOREACH
     { nullptr,                  nullptr,                Precedence::NONE },             // FROM
     { nullptr,                  nullptr,                Precedence::NONE },             // IF
@@ -943,7 +990,6 @@ const ParseRule Compiler::rules[] = {
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
     { &Compiler::Unary,         nullptr,                Precedence::NONE },             // NOT
     { nullptr,                  &Compiler::Or,          Precedence::OR },               // OR
-    { nullptr,                  nullptr,                Precedence::NONE },             // PRINT
     { nullptr,                  nullptr,                Precedence::NONE },             // RETURN
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARE
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARED
@@ -986,6 +1032,38 @@ void Compiler::Expression() {
 void Compiler::Grouping(bool canAssign) {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
+}
+
+
+/**
+ * Parses () postfix.
+ */
+void Compiler::Call(bool canAssign) {
+    isValidExprStmt = true;
+    std::uint8_t argCount = ArgumentList();
+    EmitBytes(OpCode::CALL, argCount);
+}
+
+
+/**
+ * Parses a list of arguments ended with a parenthesis.
+ */
+std::uint8_t Compiler::ArgumentList() {
+    std::uint8_t argCount = 0;
+
+    if (!parser.Check(TokenType::RIGHT_PAREN)) {
+        do {
+            Expression();
+            if (argCount == 255) {
+                parser.Error("Can't have more than 255 arguments.");
+            }
+
+            argCount++;
+        } while (parser.Match(TokenType::COMMA));
+    }   
+
+    parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after arguments.");
+    return argCount;
 }
 
 
@@ -1120,6 +1198,41 @@ void Compiler::Literal(bool canAssign) {
         
         default: UNREACHABLE();
     }
+}
+
+
+/**
+ * Handles a function literal/anonymous function.
+ */
+void Compiler::Function(bool canAssign) {
+    isValidExprStmt = true;
+
+    FunctionUnit unit{ vm, *this, parser };
+    PushUnit(&unit, FunctionType::FUNCTION);
+
+    currentUnit->BeginScope();
+    parser.Consume(TokenType::LEFT_PAREN, "Expected '(' after function name.");
+    
+    // Parse arguments
+    if (!parser.Check(TokenType::RIGHT_PAREN)) {
+        do {
+            currentUnit->function->arity++;
+            if (currentUnit->function->arity > 255) {
+                parser.ErrorAtCurrent("Can't have more than 255 parameters.");
+            }
+
+            std::uint8_t constant = ParseVariable("Expected parameter name.");
+            DefineVariable(constant);
+        } while (parser.Match(TokenType::COMMA));
+    }
+
+    parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after parameters.");
+
+    Block();
+    parser.Consume(TokenType::END, "Expected 'end' after function body.");
+
+    ObjFunction* function = PopUnit();
+    EmitConstant(function);
 }
 
 

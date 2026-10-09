@@ -2,6 +2,7 @@
 
 #include "lug_common.h"
 #include "lug_value.h"
+#include "lug_chunk.h"
 
 namespace Luggage {
 
@@ -12,9 +13,11 @@ enum class ObjType {
     OBJ,
     STRING,
     FUNCTION,
+    NATIVE,
     LIST,
     DICTIONARY
 };
+
 
 struct Obj {
     Obj(VMCore& vm, ObjType type) : vm(vm), type(type) {}
@@ -28,9 +31,10 @@ struct Obj {
     std::size_t size{ 0 };      // Size of the Obj.
 };
 
+// ObjString -----------------
 
 struct ObjString : Obj {
-    ObjString(VMCore& vm) : Obj(vm, ObjType::STRING) {}    
+    explicit ObjString(VMCore& vm) : Obj(vm, ObjType::STRING) {}    
     ~ObjString() override;
 
     // Factory methods to create a new ObjString on the heap
@@ -41,5 +45,37 @@ struct ObjString : Obj {
     std::size_t length{ 0 };
 };
 
+// ObjFunction -----------------
+
+struct ObjFunction : Obj {
+    explicit ObjFunction(VMCore& vm) : Obj(vm, ObjType::FUNCTION), chunk(vm) {}
+    ~ObjFunction() override;
+
+    void BookkeepLocal(
+        const char* name, 
+        std::size_t nameLength
+    );
+
+    std::size_t arity{ 0 };
+    Chunk chunk;
+    ObjString* name;
+
+    static ObjFunction* New(VMCore& vm);
+    void PrintFunction();
+};
+
+
+// ObjNative -----------------
+
+using NativeFn = Value(*)(VMCore& vm, Value* args, std::size_t argCount);
+
+struct ObjNative : Obj {
+    explicit ObjNative(VMCore& vm) : Obj(vm, ObjType::NATIVE) {}
+    ~ObjNative() override;
+
+    NativeFn function{ nullptr };
+
+    static ObjNative* New(VMCore& vm, NativeFn function);
+};
 
 }
