@@ -77,7 +77,7 @@ void Value::Print(const Value& value) {
         }
 
         case ValueType::OBJ: {
-            Obj::Print(value.AsObj());
+            value.AsObj()->Print();
             break;
         }
 

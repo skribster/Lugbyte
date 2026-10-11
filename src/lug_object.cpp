@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstring>
 
 #include "lug_object.h"
 #include "lug_memory.h"
@@ -34,38 +35,9 @@ static T* AllocateObject(VMCore& vm) {
 
 // Obj methods ------------------------------------
 
-void Obj::Print(Obj* obj) {
-    switch (obj->type) {
-        case ObjType::STRING: {
-            ObjString* string = static_cast<ObjString*>(obj);
-            std::printf(string->characters);
-
-            break;
-        }
-
-        case ObjType::FUNCTION: {
-            ObjFunction* function = static_cast<ObjFunction*>(obj);
-            if (function->name == nullptr) {
-                std::printf("<script>");
-                return;
-            }
-            
-            function->PrintFunction();
-            
-            break;
-        }
-
-        case ObjType::NATIVE: {
-            std::printf("<native fn>");
-            return;
-        }
-
-        default: {
-            std::printf("Unknown object");
-            UNREACHABLE();
-            break;
-        }
-    }
+void Obj::Print() {
+    std::printf("Unknown object");
+    UNREACHABLE();
 }
 
 
@@ -162,6 +134,11 @@ ObjString::~ObjString() {
 }
 
 
+void ObjString::Print() {
+    std::printf(characters);
+}
+
+
 // ObjFunction methods ------------------------------------
 
 ObjFunction* ObjFunction::New(VMCore& vm) {
@@ -178,23 +155,89 @@ ObjFunction::~ObjFunction() {
 }
 
 
-void ObjFunction::PrintFunction() {
+void ObjFunction::Print() {
+    if (name == nullptr) {
+        std::printf("<script>");
+        return;
+    }
+            
     std::printf("<fn %s>", name->characters);
+}
+
+// ObjUpvalue methods ------------------------------------
+
+ObjUpvalue::~ObjUpvalue() {
+
+}
+
+
+ObjUpvalue* ObjUpvalue::New(VMCore& vm, Value* slot) {
+    ObjUpvalue* upvalue = AllocateObject<ObjUpvalue>(vm);
+    upvalue->location = slot;
+
+    return upvalue;
+}
+
+
+void ObjUpvalue::Print() {
+    std::printf("upvalue");
+}
+
+// ObjClosure methods ------------------------------------
+
+ObjClosure::~ObjClosure() {
+    /*
+        We mustn't free the ObjFunction because the
+        ObjClosure doesn't actually *own* the function.
+        Many ObjClosures can be pointing to the same 
+        function, and we want to make sure that the
+        ObjFunction stays until all objects referencing it
+        are gone.
+    */
+
+    // We should free the upvalue array, however...
+    Memory::FreeArray<ObjUpvalue*>(vm, upvalues, upvalueCount);
+}
+
+
+ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
+    ObjUpvalue** upvalues = Memory::Allocate<ObjUpvalue*>(vm, function->upvalueCount);
+    for (int i = 0; i < function->upvalueCount; i++) {
+        upvalues[i] = nullptr;
+    }
+    
+    ObjClosure* newClosure = AllocateObject<ObjClosure>(vm);
+    newClosure->function = function;
+    newClosure->upvalues = upvalues;
+    newClosure->upvalueCount = function->upvalueCount;
+
+    return newClosure;
+}
+
+
+void ObjClosure::Print() {
+    function->Print();
 }
 
 
 // ObjNative methods ------------------------------------
 
-ObjNative* ObjNative::New(VMCore& vm, NativeFn function) {
+ObjNative* ObjNative::New(VMCore& vm, const char* name, NativeFn function) {
     ObjNative* native = AllocateObject<ObjNative>(vm);
     native->function = function;
+    native->name = name;
 
     return native;
 }
 
 
 ObjNative::~ObjNative() {
+    
+}
 
+
+void ObjNative::Print() {
+    std::printf("<native %s>", name);
 }
 
 

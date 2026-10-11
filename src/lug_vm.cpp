@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstring>
 
 #include "lug_vm.h"
 #include "lug_opcodes.h"
@@ -99,7 +100,7 @@ void VMCore::Concatenate() {
  */
 void VMCore::DefineNative(const char* name, NativeFn function) {
     Push(ObjString::CopyFrom(*this, name, std::strlen(name)));
-    Push(ObjNative::New(*this, function));
+    Push(ObjNative::New(*this, name, function));
 
     globals.Set(Peek(1).AsObj<ObjString>(), Peek(0));
 
@@ -124,10 +125,8 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
     }
 
     switch (value.AsObj()->type) {
-        case ObjType::FUNCTION: {
-            ObjFunction* callee = value.AsObj<ObjFunction>();
-            Call(callee, argCount);
-            break;
+        case ObjType::CLOSURE: {
+            return Call(value.AsObj<ObjClosure>(), argCount);
         }
 
         case ObjType::NATIVE: {
@@ -149,9 +148,9 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
 }
 
 
-void VMCore::Call(ObjFunction* function, std::uint8_t argCount) {
-    if (argCount != function->arity) {
-        RuntimeError("Expected %d arguments but got %d.", function->arity, argCount);
+void VMCore::Call(ObjClosure* closure, std::uint8_t argCount) {
+    if (argCount != closure->function->arity) {
+        RuntimeError("Expected %d arguments but got %d.", closure->function->arity, argCount);
     }
 
     if (frameCount == FRAMES_MAX) {
@@ -159,9 +158,44 @@ void VMCore::Call(ObjFunction* function, std::uint8_t argCount) {
     }
 
     CallFrame& frame = frames[frameCount++];
-    frame.function = function;
-    frame.ip = function->chunk.bytecode;
+    frame.closure = closure;
+    frame.ip = closure->function->chunk.bytecode;
     frame.slots = stackTop - argCount - 1;
+}
+
+
+ObjUpvalue* VMCore::CaptureUpvalue(Value* local) {
+    ObjUpvalue* previousUpvalue = nullptr;
+    ObjUpvalue* upvalue = openUpvalues;
+
+    while (upvalue != nullptr && upvalue->location > local) {
+        previousUpvalue = upvalue;
+        upvalue = upvalue->next;
+    }
+
+    if (upvalue != nullptr && upvalue->location == local) {
+        return upvalue;
+    }
+
+    ObjUpvalue* createdUpvalue = ObjUpvalue::New(*this, local);
+    createdUpvalue->next = upvalue;
+    if (previousUpvalue == nullptr) {
+        openUpvalues = createdUpvalue;
+    } else {
+        previousUpvalue->next = createdUpvalue;
+    }
+
+    return createdUpvalue;
+}
+
+
+void VMCore::CloseUpvalues(Value* last) {
+    while (openUpvalues != nullptr && openUpvalues->location >= last) {
+        ObjUpvalue* upvalue = openUpvalues;
+        upvalue->closed = *upvalue->location;
+        upvalue->location = &upvalue->closed;
+        openUpvalues = upvalue->next;
+    }
 }
 
 
@@ -173,7 +207,7 @@ void VMCore::Run() {
     CallFrame* frame = &frames[frameCount - 1];
 
     #define READ_BYTE() (*frame->ip++)
-    #define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
+    #define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
     #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
     #define READ_SHORT() ((READ_BYTE() << 8) | READ_BYTE())
 
@@ -191,21 +225,21 @@ void VMCore::Run() {
     // Dispatch table shenanigans -------------------
 
 #ifdef LUG_DEBUG_TRACE_EXECUTION
-    #define TRACE_EXECUTION()                                   \
-    do {                                                        \
-        std::printf("          ");                              \
-        for (Value* slot = stack; slot < stackTop; slot++) {    \
-            std::printf("[ ");                                  \
-            Value::Print(*slot);                                \
-            std::printf(" ]");                                  \
-        }                                                       \
-                                                                \
-        std::printf("\n");                                      \
-                                                                \
-        Debug::DisassembleInstruction(                          \
-            frame->function->chunk,                             \
-            (int)(frame->ip - frame->function->chunk.bytecode)  \
-        );                                                      \
+    #define TRACE_EXECUTION()                                               \
+    do {                                                                    \
+        std::printf("          ");                                          \
+        for (Value* slot = stack; slot < stackTop; slot++) {                \
+            std::printf("[ ");                                              \
+            Value::Print(*slot);                                            \
+            std::printf(" ]");                                              \
+        }                                                                   \
+                                                                            \
+        std::printf("\n");                                                  \
+                                                                            \
+        Debug::DisassembleInstruction(                                      \
+            frame->closure->function->chunk,                                \
+            (int)(frame->ip - frame->closure->function->chunk.bytecode)     \
+        );                                                                  \
     } while (false)
 
 #else
@@ -341,6 +375,12 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(JUMP): {
+            std::uint16_t numBytesToJump = READ_SHORT();
+            frame->ip += numBytesToJump;
+            DISPATCH();
+        }
+
         CASE(JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
             if (IsFalsy(Peek(0))) {
@@ -392,12 +432,6 @@ void VMCore::Run() {
                 frame->ip += numBytesToJump;
             }
 
-            DISPATCH();
-        }
-
-        CASE(JUMP): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            frame->ip += numBytesToJump;
             DISPATCH();
         }
 
@@ -474,6 +508,16 @@ void VMCore::Run() {
             std::printf("Placeholder found during runtime.");
             abort();
         }
+        
+        CASE(POP): {
+            Pop();
+            DISPATCH();
+        }
+
+        CASE(DUPLICATE): {
+            Push(Peek(0));
+            DISPATCH();
+        }
 
         CASE(DEFINE_GLOBAL): {
             /*
@@ -530,16 +574,64 @@ void VMCore::Run() {
             DISPATCH();
         }
 
-        CASE(POP): {
+        CASE(GET_UPVALUE): {
+            std::uint8_t slot = READ_BYTE();
+            Push(*frame->closure->upvalues[slot]->location);
+
+            DISPATCH();
+        }
+
+        CASE(SET_UPVALUE): {
+            std::uint8_t slot = READ_BYTE();
+            *frame->closure->upvalues[slot]->location = Peek(0);
+
+            DISPATCH();
+        }
+
+        CASE(CLOSE_UPVALUE): {
+            CloseUpvalues(stackTop - 1);
             Pop();
+
+            DISPATCH();
+        }
+        
+        CASE(CALL): {
+            std::uint8_t argCount = READ_BYTE();
+            
+            // Attempt to call the callee, whether it is of any value type.
+            CallValue(Peek(argCount), argCount);
+            
+            // After we call the value, there will be a new call frame on the 
+            // frame stack. Let's update our pointer to match that.
+            frame = &frames[frameCount - 1];
+            
             DISPATCH();
         }
 
-        CASE(DUPLICATE): {
-            Push(Peek(0));
+        CASE(CLOSURE): {
+            ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
+            ObjClosure* closure = ObjClosure::New(*this, function);
+            Push(closure);
+
+            for (std::size_t i = 0; i < closure->upvalueCount; i++) {
+                std::uint8_t isLocal = READ_BYTE();
+                std::uint8_t index = READ_BYTE();
+                
+                // When we emitted OP_CLOSURE, we were done parsing
+                // a function declaration. Now, the current function is
+                // the SURROUNDING function of that declaration, so we can
+                // read the upvalue right from the current call frame to grab
+                // it from the enclosing function.
+                if (isLocal) {
+                    closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
+                } else {
+                    closure->upvalues[i] = frame->closure->upvalues[index];
+                }
+            }
+
             DISPATCH();
         }
-
+        
         CASE(PRINT): {
             Value::Print(Pop());
             std::printf("\n");
@@ -547,21 +639,10 @@ void VMCore::Run() {
             DISPATCH();
         }
 
-        CASE(CALL): {
-            std::uint8_t argCount = READ_BYTE();
-
-            // Attempt to call the callee, whether it is of any value type.
-            CallValue(Peek(argCount), argCount);
-
-            // After we call the value, there will be a new call frame on the 
-            // frame stack. Let's update our pointer to match that.
-            frame = &frames[frameCount - 1];
-
-            DISPATCH();
-        }
-
         CASE(RETURN): {
             Value result = Pop();
+            CloseUpvalues(frame->slots);
+
             frameCount--;
             if (frameCount == 0) {
                 Pop();
@@ -575,6 +656,8 @@ void VMCore::Run() {
             DISPATCH(); // Break out of the interpreter loop.
         }
     }
+
+    ASSERT(0, "Unknown opcode.");
 
     #undef READ_BYTE
     #undef READ_CONSTANT
@@ -612,7 +695,10 @@ bool VM::Interpret(std::string_view source) {
         ObjFunction* function = compiler.Compile(source.data());
 
         core->Push(Value(function));
-        core->Call(function, 0);
+        ObjClosure* closure = ObjClosure::New(*core, function);
+        core->Pop();
+        core->Push(closure);
+        core->Call(closure, 0);
         core->Run();
 
     } catch (LugError error) {

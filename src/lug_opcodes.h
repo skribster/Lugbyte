@@ -23,30 +23,34 @@
     OPCODE(LESS)                    \
     OPCODE(LESS_EQUAL)              \
                                     \
+    OPCODE(JUMP)                    \
     OPCODE(JUMP_IF_FALSE)           \
     OPCODE(JUMP_IF_TRUE)            \
     OPCODE(JUMP_IF_FALSE_OR_POP)    \
     OPCODE(JUMP_IF_TRUE_OR_POP)     \
     OPCODE(POP_JUMP_IF_FALSE)       \
     OPCODE(POP_JUMP_IF_TRUE)        \
-    OPCODE(JUMP)                    \
     OPCODE(LOOP)                    \
     OPCODE(COUNT_PREP)              \
     OPCODE(COUNT_LOOP)              \
     OPCODE(PLACEHOLDER)             \
+                                    \
+    OPCODE(POP)                     \
+    OPCODE(DUPLICATE)               \
                                     \
     OPCODE(DEFINE_GLOBAL)           \
     OPCODE(GET_GLOBAL)              \
     OPCODE(SET_GLOBAL)              \
     OPCODE(GET_LOCAL)               \
     OPCODE(SET_LOCAL)               \
+    OPCODE(GET_UPVALUE)             \
+    OPCODE(SET_UPVALUE)             \
+    OPCODE(CLOSE_UPVALUE)           \
                                     \
-    OPCODE(POP)                     \
-    OPCODE(DUPLICATE)               \
+    OPCODE(CALL)                    \
+    OPCODE(CLOSURE)                 \
                                     \
     OPCODE(PRINT)                   \
-    OPCODE(CALL)                    \
-                                    \
                                     \
     OPCODE(RETURN)
 

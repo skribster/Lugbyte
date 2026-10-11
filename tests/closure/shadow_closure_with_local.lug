@@ -1,0 +1,15 @@
+do
+    box foo <- "closure"
+
+    box f <- function()
+        do
+            print(foo) // expect: closure
+            box foo <- "shadow"
+            print(foo) // expect: shadow
+        end
+
+        print(foo) // expect: closure
+    end
+
+    f()
+end

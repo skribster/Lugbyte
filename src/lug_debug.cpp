@@ -2,6 +2,7 @@
 
 #include "lug_debug.h"
 #include "lug_opcodes.h"
+#include "lug_object.h"
 
 
 namespace Luggage::Debug {
@@ -56,7 +57,7 @@ static int patchInstruction(const char* name, Chunk& chunk, int offset) {
  */
 static std::size_t byteInstruction(const char* name, Chunk& chunk, std::size_t offset) {
     std::uint16_t slot = chunk.bytecode[offset + 1];
-    std::printf("%-16s %4d\n", name, slot);
+    std::printf("%-20s %4d\n", name, slot);
     return offset + 2;
 }
 
@@ -139,6 +140,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_LESS_EQUAL", offset);
         }
 
+        case OpCode::JUMP: {
+            return jumpInstruction("OP_JUMP", 1, chunk, offset);
+        }
+
         case OpCode::JUMP_IF_FALSE: {
             return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
         }   
@@ -162,11 +167,7 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         case OpCode::POP_JUMP_IF_TRUE: {
             return jumpInstruction("OP_POP_JUMP_IF_TRUE", 1, chunk, offset);
         }
-
-        case OpCode::JUMP: {
-            return jumpInstruction("OP_JUMP", 1, chunk, offset);
-        }
-
+  
         case OpCode::LOOP: {
             return jumpInstruction("OP_LOOP", -1, chunk, offset);
         }
@@ -181,6 +182,14 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
 
         case OpCode::PLACEHOLDER: {
             return patchInstruction("OP_PLACEHOLDER", chunk, offset);
+        }
+
+        case OpCode::POP: {
+            return simpleInstruction("OP_POP", offset);
+        }
+
+        case OpCode::DUPLICATE: {
+            return simpleInstruction("OP_DUPLICATE", offset);
         }
 
         case OpCode::DEFINE_GLOBAL: {
@@ -203,20 +212,48 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return byteInstruction("OP_SET_LOCAL", chunk, offset);
         }
 
-        case OpCode::POP: {
-            return simpleInstruction("OP_POP", offset);
+        case OpCode::GET_UPVALUE: {
+            return byteInstruction("OP_GET_UPVALUE", chunk, offset);
         }
 
-        case OpCode::DUPLICATE: {
-            return simpleInstruction("OP_DUPLICATE", offset);
+        case OpCode::SET_UPVALUE: {
+            return byteInstruction("OP_SET_UPVALUE", chunk, offset);
         }
 
-        case OpCode::PRINT: {
-            return simpleInstruction("OP_PRINT", offset);
+        case OpCode::CLOSE_UPVALUE: {
+            return simpleInstruction("OP_CLOSE_UPVALUE", offset);
         }
 
         case OpCode::CALL: {
             return byteInstruction("OP_CALL", chunk, offset);
+        }
+
+        case OpCode::CLOSURE: {
+            offset++;
+            
+            std::uint8_t constant = chunk.bytecode[offset++];
+            std::printf("%-20s %4d ", "OP_CLOSURE", constant);
+            Value::Print(chunk.constants.values[constant]);
+            std::printf("\n");
+
+            ObjFunction* function = chunk.constants.values[constant].AsObj<ObjFunction>();
+            for (int j = 0; j < function->upvalueCount; j++) {
+                int isLocal = chunk.bytecode[offset++];
+                int index = chunk.bytecode[offset++];
+
+                std::printf(
+                    "%04zu      |                         %s %d\n",
+                    offset - 2, 
+                    isLocal ? "local" : "upvalue", 
+                    index
+                );
+            }
+
+            return offset;
+        }
+
+        case OpCode::PRINT: {
+            return simpleInstruction("OP_PRINT", offset);
         }
 
         case OpCode::RETURN: {

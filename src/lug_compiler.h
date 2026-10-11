@@ -16,16 +16,29 @@ namespace Luggage {
 // Forward declarations so C++ doesn't get mad at me
 class Compiler; 
 
+enum class FunctionType {
+    FUNCTION,
+    SCRIPT
+};
+
+
 struct Local {
 	bool initialized{ false };
+    bool isCaptured{ false };
 	Token name;
 	std::size_t depth{ 0 };
 };
 
 
-enum class FunctionType {
-    FUNCTION,
-    SCRIPT
+struct Upvalue {
+    std::size_t index;
+
+    /*
+        An upvalue is 'local' if it points to an actual local on the
+        stack. Sometimes, an upvalue may point to another upvalue, 
+        and if so, isLocal is false.
+    */
+    bool isLocal; 
 };
 
 
@@ -37,11 +50,13 @@ public:
     void EndScope();
     void AddLocal(Token name);
     void AddHiddenLocal(const char* name);
+    std::size_t AddUpvalue(std::uint8_t slotIndex, bool isLocal);
     std::size_t DiscardLocals(std::size_t maxDepth);
     void MarkInitialized();
 
     static constexpr int NOT_FOUND{ -1 };
     int ResolveLocal(const Token& name) const;
+    int ResolveUpvalue(const Token& name);
     
     Local locals[UINT8_COUNT]; 
     std::size_t localCount{ 0 };
@@ -50,6 +65,7 @@ public:
     ObjFunction* function{ nullptr };
     FunctionType type;
     FunctionUnit* enclosing{ nullptr };
+    Upvalue upvalues[UINT8_COUNT];
 
 private:
     VMCore& vm;
@@ -123,6 +139,7 @@ private:
     Parser parser;
     VMCore& vm;
     bool isValidExprStmt{ false };
+    Token pendingName{ Token::Synthetic("anonymous") };
 
     Chunk* CurrentChunk() const;
     void PushUnit(FunctionUnit* unit, FunctionType type);

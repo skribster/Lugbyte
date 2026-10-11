@@ -1,0 +1,16 @@
+do
+    box f;
+
+    do
+        box a <- "a"
+        box f_ <- function() print(a) end
+        f <- f_
+    end
+
+    do
+        // Since a is out of scope, the local slot will be reused by b. Make sure
+        // that f still closes over a.
+        box b <- "b"
+        f() // expect: a
+    end
+end

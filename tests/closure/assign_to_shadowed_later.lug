@@ -1,0 +1,14 @@
+box a <- "global"
+
+do
+    box assign <- function()
+        a <- "assigned"
+    end
+
+    box a <- "inner"
+    assign()
+
+    print(a) // expect: inner
+end
+
+print(a) // expect: assigned

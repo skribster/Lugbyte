@@ -13,7 +13,7 @@ constexpr std::size_t FRAMES_MAX = 64;
 constexpr std::size_t STACK_MAX = (FRAMES_MAX * UINT8_COUNT);
 
 struct CallFrame {
-    ObjFunction* function{ nullptr };
+    ObjClosure* closure{ nullptr };
     std::uint8_t* ip{ nullptr };
     Value* slots{ nullptr };
 };
@@ -43,7 +43,10 @@ private:
     Value Pop();
     
     void CallValue(Value value, std::uint8_t argCount);
-    void Call(ObjFunction* function, std::uint8_t argCount);
+    void Call(ObjClosure* closure, std::uint8_t argCount);
+    ObjUpvalue* CaptureUpvalue(Value* local);
+    void CloseUpvalues(Value* last);
+
     void Run();
     
     CallFrame frames[FRAMES_MAX];
@@ -54,6 +57,7 @@ private:
     Table strings;
     Table globals;
     Obj* objects{ nullptr };
+    ObjUpvalue* openUpvalues{ nullptr };
     
     LugError lastError;
 
@@ -76,7 +80,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
 
     for (int i = frameCount - 1; i >= 0; i--) {
         CallFrame& frame = frames[i];
-        ObjFunction* function = frame.function;
+        ObjFunction* function = frame.closure->function;
         std::size_t instruction = frame.ip - function->chunk.bytecode - 1;
         std::size_t line = function->chunk.GetLine(instruction);
 

@@ -1,0 +1,8 @@
+do
+    box local <- "local"
+    box f <- function()
+        print(local) // expect: local
+    end
+    
+    f()
+end

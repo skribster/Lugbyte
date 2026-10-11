@@ -1,0 +1,12 @@
+box f
+
+box foo <- function(param)
+    box f_ <- function()
+        print(param)
+    end
+
+    f <- f_
+end
+
+foo("param")
+f() // expect: param

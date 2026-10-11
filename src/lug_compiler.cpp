@@ -26,10 +26,9 @@ void FunctionUnit::EndScope() {
         every local that greater or equal scope than the 
         one that we just exited out of.
     */
-    std::size_t popped = DiscardLocals(scopeDepth);
-
-    localCount -= popped;
     scopeDepth--;
+    std::size_t popped = DiscardLocals(scopeDepth);
+    localCount -= popped;
 }
 
 
@@ -83,6 +82,37 @@ void FunctionUnit::AddHiddenLocal(const char* name) {
 }
 
 
+std::size_t FunctionUnit::AddUpvalue(std::uint8_t slotIndex, bool isLocal) {
+    std::size_t upvalueCount = function->upvalueCount;
+
+    /*
+        We'll check whether if we already have an upvalue pointing
+        to the given slot index. If so, we don't need to waste memory
+        making another upvalue that points to the same slot. Instead,
+        we can just reuse it.
+
+        Loop over the upvalue array and return the first item that
+        shares the same slot index.
+    */
+    for (std::size_t i = 0; i < upvalueCount; i++) {
+        Upvalue& upvalue = upvalues[i];
+        if (upvalue.index == slotIndex && upvalue.isLocal == isLocal) {
+            return i;
+        }
+    }
+
+    if (upvalueCount == UINT8_COUNT) {
+        parser.Error("Too many closure variables in function.");
+        return 0;
+    }
+    
+    upvalues[upvalueCount].isLocal = isLocal;
+    upvalues[upvalueCount].index = slotIndex;
+
+    return function->upvalueCount++;
+}
+
+
 /**
  * Takes in a the name of a local variable, and
  * returns which slot it will be in on the stack.
@@ -127,6 +157,36 @@ int FunctionUnit::ResolveLocal(const Token& name) const {
     return -1;
 }
 
+
+/**
+ * Tries to look for a local value in the surrounding 
+ * function. Returns the upvalue index for the variable
+ * if found, returns -1 otherwise.
+ */
+int FunctionUnit::ResolveUpvalue(const Token& name) {
+    if (enclosing == nullptr) return -1;
+
+    // We will try and find the local inside the enclosing
+    // function. enclosing->ResolveLocal will return the local's
+    // slot number relative to the *enclosing's* callframe. 
+    int local = enclosing->ResolveLocal(name);
+    if (local != -1) {
+        enclosing->locals[local].isCaptured = true;
+        return AddUpvalue(static_cast<std::uint8_t>(local), true);
+    }
+
+    // By calling this function recursively, we can work our
+    // way through the linked list of function units until we
+    // reach one of our base cases: finding an actual local,
+    // or reaching the end of the list.
+    int upvalue = enclosing->ResolveUpvalue(name);
+    if (upvalue != -1) {
+        return AddUpvalue(static_cast<std::uint8_t>(upvalue), false);
+    }
+
+    return -1;
+}
+
 /**
  * Pops all of the locals from a given max depth.
  * Any scope with a depth higher or equal to than the maxDepth
@@ -138,16 +198,21 @@ std::size_t FunctionUnit::DiscardLocals(std::size_t maxDepth) {
     std::size_t unpopped = localCount;
     while (
         unpopped > 0 
-        && locals[unpopped - 1].depth >= maxDepth
+        && locals[unpopped - 1].depth > maxDepth
     ) {
         /*
-        Local variables occupy slots on the stack, so we should
-        pop it from the stack when it goes out of scope.
-        For every variable, we emit an OP_POP instruction to
-        pop it from the stack.
+            Local variables occupy slots on the stack, so we should
+            pop it from the stack when it goes out of scope.
+            For every variable, we emit an OP_POP instruction to
+            pop it from the stack.
         */
-       compiler.EmitByte(OpCode::POP);
-       unpopped--;
+
+        if (locals[unpopped - 1].isCaptured) {
+            compiler.EmitByte(OpCode::CLOSE_UPVALUE);
+        } else {
+            compiler.EmitByte(OpCode::POP);
+        }
+        unpopped--;
     }
 
     return localCount - unpopped;
@@ -194,7 +259,7 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->type = type;
     
     if (type != FunctionType::SCRIPT) {
-        unit->function->name = ObjString::CopyFrom(vm, "anonymous", 9);
+        unit->function->name = ObjString::CopyFrom(vm, pendingName.start, pendingName.length);
     }
 
     /*
@@ -671,6 +736,7 @@ void Compiler::PrintStatement() {
 
 void Compiler::BoxStatement() {
     std::uint8_t global = ParseVariable("Expected variable name.");
+    pendingName = parser.previous;
 
     if (parser.Match(TokenType::LEFT_ARROW)) {
         Expression();
@@ -680,6 +746,7 @@ void Compiler::BoxStatement() {
     }
 
     DefineVariable(global);
+    pendingName = Token::Synthetic("anonymous");
 }
 
 
@@ -843,40 +910,42 @@ void Compiler::CountStatement() {
     // Parse the identifier as a new local.
     ParseVariable("Expected variable name.");
     DefineVariable(0);
-
+    
     int counter = currentUnit->ResolveLocal(parser.previous);
     ASSERT(counter != -1, "Counter's slot is -1 and cannot be found");
-
+    
     // Start --------------------------
     parser.Consume(TokenType::FROM, "Expected 'from' after incrementer name.");
     Expression();
     EmitBytes(OpCode::SET_LOCAL, counter);
-
+    
     // Condition --------------------------
     parser.Consume(TokenType::TO, "Expected 'to' after start value.");
     Expression();
     currentUnit->AddHiddenLocal("$limit");
-
+    
     // Step --------------------------
     if (parser.Match(TokenType::BY)) {
         Expression();
     } else {
         EmitConstant(1);
     }
-
+    
     currentUnit->AddHiddenLocal("$step");
-
+    
     // Check at runtime whether these values are 
     // valid (if they're numbers, if they run, etc.)
     loop.exitJump = EmitJump(OpCode::COUNT_PREP);
     
     // Actual loop body --------------------------
+    currentUnit->BeginScope();
     StartLoop(loop);
 
     parser.Consume(TokenType::DO, "Expected 'do' after count statement.");
     Block();
     parser.Consume(TokenType::END, "Expected 'end' after count statement.");
 
+    currentUnit->EndScope();
     EndLoop();
 
     currentUnit->EndScope();
@@ -1232,7 +1301,14 @@ void Compiler::Function(bool canAssign) {
     parser.Consume(TokenType::END, "Expected 'end' after function body.");
 
     ObjFunction* function = PopUnit();
-    EmitConstant(function);
+    EmitBytes(OpCode::CLOSURE, MakeConstant(function));
+
+    // For every upvalue, we will emit two bytes: isLocal and index.
+    // OP_CLOSURE has a variadic number of operands.
+    for (std::size_t i = 0; i < function->upvalueCount; i++) {
+        EmitByte(unit.upvalues[i].isLocal ? 1 : 0);
+        EmitByte(unit.upvalues[i].index);
+    }
 }
 
 
@@ -1264,6 +1340,12 @@ void Compiler::NamedVariable(Token& name, bool canAssign) {
         getOp = OpCode::GET_LOCAL;
         setOp = OpCode::SET_LOCAL;
 
+    // If we can't find the variable name in the current function,
+    // look inside the enclosing function's values.
+    } else if ((arg = currentUnit->ResolveUpvalue(name)) != -1) {
+        getOp = OpCode::GET_UPVALUE;
+        setOp = OpCode::SET_UPVALUE;
+        
     // This probably means that the variable is a global variable.
     } else {
         arg = IdentifierConstant(parser.previous);

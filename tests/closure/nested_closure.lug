@@ -1,0 +1,25 @@
+box f
+
+box f1 <- function()
+  box a <- "a"
+  box f2 <- function()
+    box b <- "b"
+    box f3 <- function()
+      box c <- "c"
+      box f4 <- function()
+        print(a)
+        print(b)
+        print(c)
+      end
+      f <- f4
+    end
+    f3()
+  end
+  f2()
+end
+f1()
+
+f()
+// expect: a
+// expect: b
+// expect: c

@@ -13,6 +13,8 @@ enum class ObjType {
     OBJ,
     STRING,
     FUNCTION,
+    UPVALUE,
+    CLOSURE,
     NATIVE,
     LIST,
     DICTIONARY
@@ -22,7 +24,7 @@ enum class ObjType {
 struct Obj {
     Obj(VMCore& vm, ObjType type) : vm(vm), type(type) {}
     virtual ~Obj() = default;
-    static void Print(Obj* obj);
+    virtual void Print();
 
     VMCore& vm;
     ObjType type;
@@ -36,6 +38,7 @@ struct Obj {
 struct ObjString : Obj {
     explicit ObjString(VMCore& vm) : Obj(vm, ObjType::STRING) {}    
     ~ObjString() override;
+    void Print() override;
 
     // Factory methods to create a new ObjString on the heap
     static ObjString* CopyFrom(VMCore& vm, const char* original, std::size_t length);
@@ -50,20 +53,47 @@ struct ObjString : Obj {
 struct ObjFunction : Obj {
     explicit ObjFunction(VMCore& vm) : Obj(vm, ObjType::FUNCTION), chunk(vm) {}
     ~ObjFunction() override;
-
-    void BookkeepLocal(
-        const char* name, 
-        std::size_t nameLength
-    );
+    void Print() override;
 
     std::size_t arity{ 0 };
+    std::size_t upvalueCount{ 0 };
+    ObjString* name{ nullptr };
     Chunk chunk;
-    ObjString* name;
 
     static ObjFunction* New(VMCore& vm);
-    void PrintFunction();
 };
 
+// ObjUpvalue -----------------
+
+struct ObjUpvalue : Obj {
+    explicit ObjUpvalue(VMCore& vm) : Obj(vm, ObjType::UPVALUE) {}
+    ~ObjUpvalue() override;
+    void Print() override;
+
+    // We use a pointer here since upvalues store a *reference*
+    // to the actual variable,not a copy.
+    Value* location{ nullptr };
+    Value closed{ Value::Nil() };
+    ObjUpvalue* next{ nullptr };
+
+    static ObjUpvalue* New(VMCore& vm, Value* slot);
+};
+
+// ObjClosure -----------------
+
+struct ObjClosure : Obj {
+    explicit ObjClosure(VMCore& vm) : Obj(vm, ObjType::CLOSURE) {}
+    ~ObjClosure() override;
+    void Print() override;
+
+    ObjFunction* function{ nullptr };
+
+    // Upvalue array
+    ObjUpvalue** upvalues{ nullptr };
+    std::size_t upvalueCount{ 0 };
+
+    static ObjClosure* New(VMCore& vm, ObjFunction* function);
+};
 
 // ObjNative -----------------
 
@@ -72,10 +102,12 @@ using NativeFn = Value(*)(VMCore& vm, Value* args, std::size_t argCount);
 struct ObjNative : Obj {
     explicit ObjNative(VMCore& vm) : Obj(vm, ObjType::NATIVE) {}
     ~ObjNative() override;
+    void Print() override;
 
     NativeFn function{ nullptr };
+    const char* name;
 
-    static ObjNative* New(VMCore& vm, NativeFn function);
+    static ObjNative* New(VMCore& vm, const char* name, NativeFn function);
 };
 
 }
