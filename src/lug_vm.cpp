@@ -22,10 +22,9 @@ static bool IsFalsy(Value value) {
 }
 
 
-static inline bool IsTruthy(Value value) {
+static bool IsTruthy(Value value) {
     return !IsFalsy(value);
 }
-
 
 // VMCore methods -----------------------------------
 
@@ -75,6 +74,28 @@ void VMCore::ResetStack() {
 
 
 /**
+ * Clamps a list index given the list's number of items.
+ * If it's negative, it will wrap around to the end of the list.
+ * If the index is larger than the number of items, we'll throw
+ * an error.
+ * Otherwise, just keep the list index.
+ */
+int VMCore::ClampIndex(int index, int itemCount) {
+    // This handles the wrap-around case for negative numbers.
+    if (index < 0) {
+        return ((index % itemCount) + itemCount) % itemCount; 
+    }
+
+    // -1 because itemCount starts at 1, while indices start at 0
+    if (index > itemCount - 1) {
+        RuntimeError("Index '%d' out of range.", index);
+    }
+
+    return index;
+}
+
+
+/**
  * Tries to concatenate the two most recent values onto 
  * the stack, assuming they are of type ObjString.
  * Then, pushes back the concatenated result.
@@ -119,9 +140,8 @@ void VMCore::AddObject(Obj* object) {
 
 
 void VMCore::CallValue(Value value, std::uint8_t argCount) {
-    // We can only call functions.
     if (!value.IsObj()) {
-        RuntimeError("Can only call functions.");
+        RuntimeError("Can't call values of type '%s'.", value.StringType());
     }
 
     switch (value.AsObj()->type) {
@@ -220,6 +240,15 @@ void VMCore::Run() {
         }                                               \
         Push(a.AsNumber() op b.AsNumber());             \
     } while (false)
+
+    #define CLAMP_INDEX(index, numItems)                                    \
+        if ((index) >= static_cast<int>(numItems)) {                        \
+            RuntimeError("Index out of range.");                            \
+        }                                                                   \
+                                                                            \
+        if ((index) < 0) {                                                  \
+            index = ((index) % (numItems) + (numItems)) % (numItems);       \
+        }
         
 
     // Dispatch table shenanigans -------------------
@@ -322,7 +351,10 @@ void VMCore::Run() {
                 Push(a + b);
 
             } else {
-                RuntimeError("Operands must be two numbers or two strings.");
+                RuntimeError("Can't add operands of type '%s' and '%s' together.", 
+                    Peek(1).StringType(), 
+                    Peek(0).StringType()
+                );
                 return;
             }
 
@@ -505,8 +537,7 @@ void VMCore::Run() {
         }
 
         CASE(PLACEHOLDER): {
-            std::printf("Placeholder found during runtime.");
-            abort();
+            ASSERT(false, "Placeholder found during runtime.");
         }
         
         CASE(POP): {
@@ -632,6 +663,168 @@ void VMCore::Run() {
             DISPATCH();
         }
         
+        CASE(LIST): {
+            ObjList* newList = ObjList::New(*this);
+            Push(newList);
+
+            DISPATCH();
+        }
+
+        CASE(DICTIONARY): {
+            ObjDictionary* newDictionary = ObjDictionary::New(*this);
+            Push(newDictionary);
+
+            DISPATCH();
+        }
+
+        CASE(APPEND): {
+            ObjList* list = Peek(1).AsObj<ObjList>();
+            list->Append(Pop());
+            
+            DISPATCH();
+        }
+
+        CASE(DEFINE_ENTRY): {
+            ObjDictionary* dictionary = Peek(2).AsObj<ObjDictionary>();
+            Value key = Peek(1);
+            Value value = Peek(0);
+
+            dictionary->Set(key, value);
+
+            Pop();
+            Pop();
+
+            DISPATCH();
+        }
+
+        CASE(GET_INDEX): {
+            //    Peek(1)     Peek(0)
+            // [ collection ][ index ]
+            //                 ^^^^^ stackTop. You are here.
+            Value& collection = Peek(1);
+            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICTIONARY)) {
+                RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
+            }
+            
+            switch (collection.AsObj()->type) {
+                case ObjType::LIST: {
+                    if (!Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
+                    
+                    ObjList* list = collection.AsObj<ObjList>();
+                    int index = Pop().AsInteger();
+                    index = ClampIndex(index, list->itemCount);
+        
+                    Value value = list->Get(index);
+                    Push(value);
+                }
+
+                case ObjType::DICTIONARY: {
+                    ObjDictionary* dictionary = collection.AsObj<ObjDictionary>();
+
+                    Value key = Peek(0);
+                    Value value = dictionary->Get(key);
+
+                    Pop(); // Key
+                    Pop(); // Collection
+                    
+                    Push(value);
+                }
+            }
+
+            DISPATCH();
+        }
+        
+        CASE(SET_INDEX): {
+            //     Peek(2)    Peek(1)    Peek(0)
+            // [ collection ][ index ][ newValue ]
+            //                                    ^^^^^^ stackTop. You are here.
+            Value& collection = Peek(2);
+            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICTIONARY)) {
+                RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
+            }
+
+            Value newValue = Peek(0);
+
+            switch (collection.AsObj()->type) {
+                case ObjType::LIST: {
+                    // Lists must always have integers as indices.
+                    if (!Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
+                    
+                    ObjList* list = collection.AsObj<ObjList>();
+
+                    int index = Peek(1).AsInteger();
+                    index = ClampIndex(index, list->itemCount);
+
+                    list->Set(index, newValue); 
+                    Pop(); // New value
+                    Pop(); // Index
+                    Pop(); // Collection
+
+                    Push(newValue);
+                }
+
+                case ObjType::DICTIONARY: {
+                    ObjDictionary* dictionary = collection.AsObj<ObjDictionary>();
+
+                    Value key = Peek(1);
+                    dictionary->Set(key, newValue);
+
+                    Pop(); // New value
+                    Pop(); // Index
+                    Pop(); // Collectione
+
+                    Push(newValue);
+                }
+            }
+
+
+            
+
+
+            DISPATCH();
+        }
+
+        CASE(GET_ATTRIBUTE): {
+            ObjString* attributeName = READ_STRING();
+
+            if (!Peek(0).IsObj(ObjType::THING)) {
+                RuntimeError(
+                    "Attribute '%s' does not exist on value of type '%s'.", 
+                    attributeName->characters, 
+                    Peek(0).StringType()
+                );
+            }
+
+            ObjThing* thing = Peek(0).AsObj<ObjThing>();
+            Value value = thing->Get(attributeName);
+            Pop(); // Thing
+            Push(value);
+
+            DISPATCH();
+        }
+
+
+        CASE(SET_ATTRIBUTE): {
+            ObjString* attributeName = READ_STRING();
+            if (!Peek(1).IsObj(ObjType::THING)) {
+                RuntimeError(
+                    "Attribute '%s' does not exist on value of type '%s'.", 
+                    attributeName->characters, 
+                    Peek(0).StringType()
+                );
+            }
+
+            ObjThing* thing = Peek(1).AsObj<ObjThing>();
+            Value value = Peek(0);
+            thing->Set(attributeName, value);
+
+            Pop();
+            Pop();
+            Push(value); // Push the value back since assignments leave the value on the stack.
+
+            DISPATCH();
+        }
+        
         CASE(PRINT): {
             Value::Print(Pop());
             std::printf("\n");
@@ -663,6 +856,7 @@ void VMCore::Run() {
     #undef READ_CONSTANT
     #undef READ_STRING
 
+    #undef CLAMP_INDEX
     #undef BINARY_OP
 
     #undef TRACE_EXECUTION 
@@ -703,6 +897,10 @@ bool VM::Interpret(std::string_view source) {
 
     } catch (LugError error) {
         core->lastError = error;
+        
+        //! Not the best way right now to handle errors. Ideally the user'd like the stack to
+        // rewind to how it was, but this is a good temporary fix.
+        core->ResetStack();
         return false;
     }
 

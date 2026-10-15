@@ -88,6 +88,22 @@ void Value::Print(const Value& value) {
     }
 }
 
+
+const char* Value::StringType() const {
+    switch (type) {
+        case ValueType::BOOLEAN:    return "boolean";
+        case ValueType::NIL:        return "nil";
+        case ValueType::NUMBER:     return "number";
+        case ValueType::OBJ:        return AsObj()->StringType();
+
+        default: {
+            UNREACHABLE();
+            return "unknown";
+        }
+    }
+}
+
+
 std::uint32_t Value::GetHash() const {
     switch (type) {
         case ValueType::BOOLEAN:    return AsBool() ? 3 : 5;

@@ -3,6 +3,7 @@
 
 #include "lug_table.h"
 #include "lug_memory.h"
+#include "lug_object.h"
 
 namespace Luggage {
 
@@ -85,7 +86,6 @@ ObjString* Table::FindString(const char* chars, std::size_t length, std::uint32_
 
         // Stop when we find a truly empty entry
         if (entry->key.IsNil()) return nullptr;
-
         if (entry->key.IsObj(ObjType::STRING)) {
             ObjString* string = entry->key.AsObj<ObjString>();
             if (

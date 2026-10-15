@@ -43,7 +43,7 @@ primary             ::= 'null'
 
 function            ::= 'function' '(' parameters? ')' block 'end'
 list                ::= '[' expression_list? ']'
-dict                ::= '{' keyvalue_list? '}'
+dictionary          ::= '{' keyvalue_list? '}'
 
 /* Utility rules */
 arguments           ::= expression ( ',' expression )*

@@ -41,6 +41,34 @@ void Obj::Print() {
 }
 
 
+const char* Obj::StringType() const {
+    switch (type) {
+        case ObjType::STRING:       
+            return "string";
+
+        case ObjType::NATIVE:
+        case ObjType::CLOSURE:     
+            return "function";
+
+        case ObjType::LIST:         
+            return "list";
+
+        case ObjType::DICTIONARY:   
+            return "dictionary";
+
+        case ObjType::UPVALUE:      
+            return "upvalue";
+
+        // These are behind-the-scenes objects that
+        // the user probably can't access.
+        case ObjType::FUNCTION: 
+        default:
+            std::printf("objtype: %d\n", (int)type);
+            UNREACHABLE();
+    }
+}
+
+
 // ObjString methods ------------------------------------
 
 static std::uint32_t HashString(const char* string, std::size_t length) {
@@ -65,7 +93,7 @@ static ObjString* AllocateString(VMCore& vm, char* characters, std::size_t lengt
     string->hash = hash;
 
     // Add the string to the vm's interned string table
-    vm.GetStrings().Set(string, Value::Nil());
+    vm.strings.Set(string, Value::Nil());
 
     return string;
 }
@@ -82,7 +110,7 @@ ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t len
     // Check if the string is already in the vm's string
     // interned hashset. If so, we don't need to allocate
     // anything at all, we can just return it!
-    ObjString* interned = vm.GetStrings().FindString(original, length, hash);
+    ObjString* interned = vm.strings.FindString(original, length, hash);
     if (interned != nullptr) return interned;
     
     /*
@@ -118,7 +146,7 @@ ObjString* ObjString::TakeFrom(VMCore& vm, char* chars, std::size_t length) {
     
     // Check if the string already exists in the 
     // vm's interned-string hashset
-    ObjString* interned = vm.GetStrings().FindString(chars, length, hash);
+    ObjString* interned = vm.strings.FindString(chars, length, hash);
     if (interned != nullptr) {
         Memory::FreeArray<char>(vm, chars, length + 1);
         return interned;
@@ -135,7 +163,7 @@ ObjString::~ObjString() {
 
 
 void ObjString::Print() {
-    std::printf(characters);
+    std::printf("%s", characters);
 }
 
 
@@ -202,7 +230,7 @@ ObjClosure::~ObjClosure() {
 
 ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
     ObjUpvalue** upvalues = Memory::Allocate<ObjUpvalue*>(vm, function->upvalueCount);
-    for (int i = 0; i < function->upvalueCount; i++) {
+    for (std::size_t i = 0; i < function->upvalueCount; i++) {
         upvalues[i] = nullptr;
     }
     
@@ -238,6 +266,130 @@ ObjNative::~ObjNative() {
 
 void ObjNative::Print() {
     std::printf("<native %s>", name);
+}
+
+// ObjList methods ------------------------------------
+
+ObjList::~ObjList() {
+    Memory::FreeArray<Value>(vm, items, itemCapacity);
+}
+
+
+ObjList* ObjList::New(VMCore& vm) {
+    ObjList* list = AllocateObject<ObjList>(vm);
+    return list;
+}
+
+
+void ObjList::Print() {
+    std::printf("[ ");
+    for (std::size_t i = 0; i < itemCount; i++) {
+        Value::Print(items[i]);
+        if (i != itemCount - 1) std::printf(", ");
+    }
+
+    std::printf(" ]");
+}
+
+
+void ObjList::Append(Value value) {
+    if (itemCount >= itemCapacity) {
+        std::size_t oldCapacity = itemCapacity;
+        itemCapacity = Memory::GrowCapacity(oldCapacity);
+        items = Memory::GrowArray<Value>(vm, items, oldCapacity, itemCapacity);
+    }
+
+    items[itemCount] = value;
+    itemCount++;
+}
+
+
+Value ObjList::Get(int index) const {
+    return items[index];
+}
+
+
+void ObjList::Set(int index, Value value) {
+    items[index] = value;
+}
+
+// ObjDictionary methods ------------------------------------
+
+ObjDictionary* ObjDictionary::New(VMCore& vm) {
+    ObjDictionary* newDictionary = AllocateObject<ObjDictionary>(vm);
+    return newDictionary;
+}
+
+
+ObjDictionary::~ObjDictionary() {
+
+}
+
+
+void ObjDictionary::Print() {
+    std::printf("{ ");
+
+    std::size_t numPrinted = 0;
+
+    for (std::size_t i = 0; i < dictionary.capacity; i++) {
+        Entry& entry = dictionary.entries[i];
+
+        if (entry.key.type == ValueType::TOMBSTONE) continue;
+        if (entry.key.IsNil()) continue;
+        
+        Value::Print(entry.key);
+        std::printf(" : ");
+        Value::Print(entry.value);
+        
+        if (numPrinted != dictionary.count - 1) std::printf(", ");
+        numPrinted++;
+    }
+
+    std::printf(" }");
+}
+
+
+Value ObjDictionary::Get(Value key) const {
+    Value* value = dictionary.Get(key);
+
+    if (value == nullptr) return Value::Nil();
+    return *value;
+}
+
+
+void ObjDictionary::Set(Value key, Value value) {
+    dictionary.Set(key, value);
+}
+
+
+// ObjThing methods ------------------------------------
+
+ObjThing::~ObjThing() {
+
+}
+
+
+ObjThing* ObjThing::New(VMCore& vm) {
+    ObjThing* newThing = AllocateObject<ObjThing>(vm);
+    return newThing;
+}
+
+
+void ObjThing::Print() {
+    std::printf("<thing>");
+}
+
+
+Value ObjThing::Get(Value key) const {
+    Value* value = attributes.Get(key);
+
+    if (value == nullptr) return Value::Nil();
+    return *value;
+}   
+
+
+void ObjThing::Set(Value attribute, Value value) {
+    attributes.Set(attribute, value);
 }
 
 

@@ -37,6 +37,7 @@ struct Value {
 
     // Casting methods for converting a struct Value to a native C++ value
     inline double AsNumber() const      { return as.number; }
+    inline int AsInteger() const        { return static_cast<int>(AsNumber()); }
     inline bool AsBool() const          { return as.boolean; }
     inline Obj* AsObj() const           { return as.obj; }
 
@@ -45,6 +46,7 @@ struct Value {
 
     // Type-checking methods for checking the type of a struct Value
     inline bool IsNumber() const        { return type == ValueType::NUMBER; }
+    inline bool IsInteger() const       { return IsNumber() && static_cast<int>(AsNumber()) == AsNumber(); }
     inline bool IsBool() const          { return type == ValueType::BOOLEAN; }
     inline bool IsNil() const           { return type == ValueType::NIL; }
     inline bool IsObj() const           { return type == ValueType::OBJ; }
@@ -55,6 +57,7 @@ struct Value {
     // I like the convention of passing in the value to Print()
     // because it looks better..........
     static void Print(const Value& value);
+    const char* StringType() const;
     std::uint32_t GetHash() const;
 
     ValueType type;

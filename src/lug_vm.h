@@ -4,6 +4,7 @@
 
 #include "lug_common.h"
 #include "lug_value.h"
+#include "lug_object.h"
 #include "lug_chunk.h"
 #include "lug_table.h"
 
@@ -26,9 +27,13 @@ class VMCore {
     
     void DefineNative(const char* name, NativeFn function);
     void AddObject(Obj* obj);
+    void Push(Value value);
+    Value& Peek(std::size_t distance) const;
+    Value Pop();
     
-    Table& GetStrings() { return strings; }
-    Obj* GetObjects() { return objects; }
+    Table strings;
+    Table globals;
+    Obj* objects{ nullptr };
     
     template<typename... Args>
     [[noreturn]] void RuntimeError(const char* format, Args... args);
@@ -38,9 +43,7 @@ class VMCore {
 private:
     void ResetStack();
     void Concatenate();
-    void Push(Value value);
-    Value& Peek(std::size_t distance) const;
-    Value Pop();
+    int ClampIndex(int index, int numItems);
     
     void CallValue(Value value, std::uint8_t argCount);
     void Call(ObjClosure* closure, std::uint8_t argCount);
@@ -54,9 +57,6 @@ private:
     Value stack[STACK_MAX];
     Value* stackTop{ nullptr };
     
-    Table strings;
-    Table globals;
-    Obj* objects{ nullptr };
     ObjUpvalue* openUpvalues{ nullptr };
     
     LugError lastError;

@@ -198,6 +198,8 @@ private:
     void Grouping(bool canAssign);
     void Call(bool canAssign);
     std::uint8_t ArgumentList();
+    void Index(bool canAssign);
+    void Dot(bool canAssign);
 
     void Unary(bool canAssign);
     void Binary(bool canAssign);
@@ -207,6 +209,8 @@ private:
     void String(bool canAssign);
     void Literal(bool canAssign);
     void Function(bool canAssign);
+    void List(bool canAssign);
+    void Dictionary(bool canAssign);
     void Variable(bool canAssign);
     void NamedVariable(Token& name, bool canAssign);
 

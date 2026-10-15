@@ -50,6 +50,15 @@
     OPCODE(CALL)                    \
     OPCODE(CLOSURE)                 \
                                     \
+    OPCODE(LIST)                    \
+    OPCODE(DICTIONARY)              \
+    OPCODE(APPEND)                  \
+    OPCODE(DEFINE_ENTRY)            \
+    OPCODE(GET_INDEX)               \
+    OPCODE(SET_INDEX)               \
+    OPCODE(GET_ATTRIBUTE)           \
+    OPCODE(SET_ATTRIBUTE)           \
+                                    \
     OPCODE(PRINT)                   \
                                     \
     OPCODE(RETURN)

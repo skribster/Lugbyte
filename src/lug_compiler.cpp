@@ -1009,12 +1009,12 @@ const ParseRule Compiler::rules[] = {
     // Single-character tokens
     { &Compiler::Grouping,      &Compiler::Call,        Precedence::CALL },             // LEFT_PAREN
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_PAREN
-    { nullptr,                  nullptr,                Precedence::NONE },             // LEFT_BRACE
+    { &Compiler::Dictionary,    nullptr,                Precedence::NONE },             // LEFT_BRACE
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACE
-    { nullptr,                  nullptr,                Precedence::NONE },             // LEFT_BRACKET
+    { &Compiler::List,          &Compiler::Index,       Precedence::CALL },             // LEFT_BRACKET
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACKET
     { nullptr,                  nullptr,                Precedence::NONE },             // COMMA
-    { nullptr,                  nullptr,                Precedence::NONE },             // DOT
+    { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // DOT
     { &Compiler::Unary,         &Compiler::Binary,      Precedence::TERM },             // MINUS
     { nullptr,                  &Compiler::Binary,      Precedence::TERM },             // PLUS
     { nullptr,                  nullptr,                Precedence::NONE },             // QUESTION
@@ -1101,6 +1101,11 @@ void Compiler::Expression() {
 void Compiler::Grouping(bool canAssign) {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
+
+    // This is to disallow expression statements like (a <- 1). 
+    // This expression will first set isValidExprStmt to be true in the parentheses, 
+    // because it sees a <-. So we have to set it to false after the right parenthesis.
+    isValidExprStmt = true;
 }
 
 
@@ -1108,9 +1113,9 @@ void Compiler::Grouping(bool canAssign) {
  * Parses () postfix.
  */
 void Compiler::Call(bool canAssign) {
-    isValidExprStmt = true;
     std::uint8_t argCount = ArgumentList();
     EmitBytes(OpCode::CALL, argCount);
+    isValidExprStmt = true;
 }
 
 
@@ -1133,6 +1138,39 @@ std::uint8_t Compiler::ArgumentList() {
 
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after arguments.");
     return argCount;
+}
+
+
+/**
+ * Parses [] postfix.
+ */
+void Compiler::Index(bool canAssign) {
+    Expression();
+    parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after index.");
+
+    if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
+        Expression();
+        EmitByte(OpCode::SET_INDEX);
+        isValidExprStmt = true;
+    } else {
+        EmitByte(OpCode::GET_INDEX);
+    }
+}
+
+
+void Compiler::Dot(bool canAssign) {
+    parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'.");
+    std::uint8_t name = IdentifierConstant(parser.previous);
+
+    std::printf("can assign to little old me: %s", canAssign ? "true" : "false");
+    if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
+        Expression();
+        EmitBytes(OpCode::SET_ATTRIBUTE, name);
+        isValidExprStmt = true;
+    } else {
+        EmitBytes(OpCode::GET_ATTRIBUTE, name);
+        isValidExprStmt = false;
+    }
 }
 
 
@@ -1274,8 +1312,6 @@ void Compiler::Literal(bool canAssign) {
  * Handles a function literal/anonymous function.
  */
 void Compiler::Function(bool canAssign) {
-    isValidExprStmt = true;
-
     FunctionUnit unit{ vm, *this, parser };
     PushUnit(&unit, FunctionType::FUNCTION);
 
@@ -1309,6 +1345,41 @@ void Compiler::Function(bool canAssign) {
         EmitByte(unit.upvalues[i].isLocal ? 1 : 0);
         EmitByte(unit.upvalues[i].index);
     }
+}
+
+
+/**
+ * Handles a list literal 
+ * e.g. [1, 2, 3, 4, 5...]
+ */
+void Compiler::List(bool canAssign) {
+    EmitByte(OpCode::LIST);
+    if (!parser.Check(TokenType::RIGHT_BRACKET)) {
+        do {
+            Expression();
+            EmitByte(OpCode::APPEND);
+
+        } while (parser.Match(TokenType::COMMA));
+    }
+
+    parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after list literal.");
+}
+
+
+void Compiler::Dictionary(bool canAssign) {
+    EmitByte(OpCode::DICTIONARY);
+    
+    if (!parser.Check(TokenType::RIGHT_BRACE)) {
+        do {
+            Expression();
+            parser.Consume(TokenType::COLON, "Expected ':' after key.");
+            Expression();
+            EmitByte(OpCode::DEFINE_ENTRY);
+            
+        } while (parser.Match(TokenType::COMMA));
+    }
+
+    parser.Consume(TokenType::RIGHT_BRACE, "Expected '}' after list literal.");
 }
 
 
@@ -1359,6 +1430,7 @@ void Compiler::NamedVariable(Token& name, bool canAssign) {
         isValidExprStmt = true;
     } else {
         EmitBytes(getOp, arg);
+        isValidExprStmt = false;
     }
 }
 

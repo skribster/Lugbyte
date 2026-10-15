@@ -2,11 +2,11 @@
 
 #include "lug_common.h"
 #include "lug_value.h"
-#include "lug_object.h"
 
 namespace Luggage {
 
 class VMCore;
+struct ObjString;
 
 struct Entry {
     Value key{ Value::Nil() };

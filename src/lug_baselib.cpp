@@ -31,15 +31,24 @@ static Value Clock(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
+static Value Thing(VMCore& vm, Value* args, std::size_t argCount) {
+    if (argCount != 0) {
+        vm.RuntimeError("Expected %d argument(s), got %d", 0, argCount);
+    }
+
+    ObjThing* thing = ObjThing::New(vm);
+    return thing;
+}
 
 // Library out ------------------------------
 
 static constexpr NativeEntry baseLib[] = {
     { "print",      &Print },
-    { "clock",      &Clock }
+    { "clock",      &Clock },
+    { "thing",      &Thing }, 
 };
 
 // Function declaration of defined in lug_stdlib.h
-void OpenBase(VMCore& vm) { DefineNatives(vm, baseLib); }
+void OpenBase(VMCore& vm) { DefineLib(vm, nullptr, baseLib); }
 
 }

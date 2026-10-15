@@ -12,8 +12,8 @@ print(1 and 2 and 3) // expect: 3
 // Short-circuit at the first false argument.
 box a <- "before"
 box b <- "before";
-(a <- true) and
+print((a <- true) and
     (b <- false) and
-    (a <- "bad")
+    (a <- "bad"))
 print(a) // expect: true
 print(b) // expect: false

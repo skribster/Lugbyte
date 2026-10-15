@@ -3,6 +3,7 @@
 #include "lug_common.h"
 #include "lug_value.h"
 #include "lug_chunk.h"
+#include "lug_table.h"
 
 namespace Luggage {
 
@@ -17,7 +18,8 @@ enum class ObjType {
     CLOSURE,
     NATIVE,
     LIST,
-    DICTIONARY
+    DICTIONARY,
+    THING,
 };
 
 
@@ -25,6 +27,8 @@ struct Obj {
     Obj(VMCore& vm, ObjType type) : vm(vm), type(type) {}
     virtual ~Obj() = default;
     virtual void Print();
+
+    const char* StringType() const;
 
     VMCore& vm;
     ObjType type;
@@ -108,6 +112,62 @@ struct ObjNative : Obj {
     const char* name;
 
     static ObjNative* New(VMCore& vm, const char* name, NativeFn function);
+};
+
+// ObjList -----------------
+
+struct ObjList : Obj {
+    explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST) {}
+    ~ObjList() override;
+    void Print() override;
+
+    // An ObjList is just a wrapper for a dynamic array.
+    Value* items{ nullptr };
+    std::size_t itemCount{ 0 };
+    std::size_t itemCapacity{ 0 };
+
+    void Append(Value value);
+    Value Get(int index) const;
+    void Set(int index, Value value);
+
+    static ObjList* New(VMCore& vm);
+};
+
+
+// ObjDict -----------------
+
+struct ObjDictionary : Obj {
+    explicit ObjDictionary(VMCore& vm) 
+        : Obj(vm, ObjType::DICTIONARY), dictionary(vm) 
+    {}
+
+    ~ObjDictionary() override;
+    void Print() override;
+
+    Table dictionary;
+
+    Value Get(Value key) const;
+    void Set(Value key, Value value);
+
+    static ObjDictionary* New(VMCore& vm);
+};
+
+// ObjThing -----------------
+
+struct ObjThing : Obj {
+    explicit ObjThing(VMCore& vm)
+        : Obj(vm, ObjType::THING), attributes(vm) 
+    {}
+
+    ~ObjThing() override;
+    void Print() override;
+
+    Table attributes;
+    
+    Value Get(Value field) const;
+    void Set(Value key, Value field);
+
+    static ObjThing* New(VMCore& vm);
 };
 
 }

@@ -252,6 +252,38 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return offset;
         }
 
+        case OpCode::LIST: {
+            return simpleInstruction("OP_LIST", offset);
+        }
+
+        case OpCode::DICTIONARY: {
+            return simpleInstruction("OP_DICTIONARY", offset);
+        }
+
+        case OpCode::APPEND: {
+            return simpleInstruction("OP_APPEND", offset);
+        }
+
+        case OpCode::DEFINE_ENTRY: {
+            return simpleInstruction("OP_DEFINE_ENTRY", offset);
+        }
+
+        case OpCode::GET_INDEX: {
+            return simpleInstruction("OP_GET_INDEX", offset);
+        }
+        
+        case OpCode::SET_INDEX: {
+            return simpleInstruction("OP_SET_INDEX", offset);
+        }
+
+        case OpCode::GET_ATTRIBUTE: {
+            return simpleInstruction("OP_GET_ATTRIBUTE", offset);
+        }
+
+        case OpCode::SET_ATTRIBUTE: {
+            return simpleInstruction("OP_SET_ATTRIBUTE", offset);
+        }
+
         case OpCode::PRINT: {
             return simpleInstruction("OP_PRINT", offset);
         }

@@ -294,9 +294,10 @@ Token Lexer::ScanToken() {
         case ')': return MakeToken(TokenType::RIGHT_PAREN);
         case '{': return MakeToken(TokenType::LEFT_BRACE);
         case '}': return MakeToken(TokenType::RIGHT_BRACE);
-        case '[': return MakeToken(TokenType::RIGHT_BRACKET);
-        case ']': return MakeToken(TokenType::LEFT_BRACKET);
+        case '[': return MakeToken(TokenType::LEFT_BRACKET);
+        case ']': return MakeToken(TokenType::RIGHT_BRACKET);
         case ';': return MakeToken(TokenType::SEMICOLON);
+        case ':': return MakeToken(TokenType::COLON);
         case ',': return MakeToken(TokenType::COMMA);
         case '.': return MakeToken(TokenType::DOT);
         case '-': return MakeToken(TokenType::MINUS);
