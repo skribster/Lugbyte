@@ -41,7 +41,7 @@ void Obj::Print() {
 }
 
 
-const char* Obj::StringType() const {
+const char* Obj::StringType(ObjType type) {
     switch (type) {
         case ObjType::STRING:       
             return "string";
@@ -390,6 +390,12 @@ Value ObjThing::Get(Value key) const {
 
 void ObjThing::Set(Value attribute, Value value) {
     attributes.Set(attribute, value);
+}
+
+
+void ObjThing::Set(const char* attribute, Value value) {
+    ObjString* attributeName = ObjString::CopyFrom(vm, attribute, std::strlen(attribute));
+    Set(attributeName, value);
 }
 
 

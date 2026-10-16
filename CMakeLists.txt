@@ -8,7 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(luggage_core)
 target_sources(luggage_core
     PRIVATE
+        src/lug_auxlib.cpp
         src/lug_baselib.cpp
+        src/lug_mathlib.cpp
+        src/lug_colllib.cpp
+        src/lug_stdlib.cpp
+        src/lug_strlib.cpp
+        
         src/lug_chunk.cpp
         src/lug_compiler.cpp
         src/lug_debug.cpp

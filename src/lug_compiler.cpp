@@ -1102,9 +1102,7 @@ void Compiler::Grouping(bool canAssign) {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
 
-    // This is to disallow expression statements like (a <- 1). 
-    // This expression will first set isValidExprStmt to be true in the parentheses, 
-    // because it sees a <-. So we have to set it to false after the right parenthesis.
+    // This is to allow bare expressions like (42) as statements.
     isValidExprStmt = true;
 }
 
@@ -1161,8 +1159,7 @@ void Compiler::Index(bool canAssign) {
 void Compiler::Dot(bool canAssign) {
     parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'.");
     std::uint8_t name = IdentifierConstant(parser.previous);
-
-    std::printf("can assign to little old me: %s", canAssign ? "true" : "false");
+    
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
         Expression();
         EmitBytes(OpCode::SET_ATTRIBUTE, name);
@@ -1316,7 +1313,7 @@ void Compiler::Function(bool canAssign) {
     PushUnit(&unit, FunctionType::FUNCTION);
 
     currentUnit->BeginScope();
-    parser.Consume(TokenType::LEFT_PAREN, "Expected '(' after function name.");
+    parser.Consume(TokenType::LEFT_PAREN, "Expected '(' after 'function'.");
     
     // Parse arguments
     if (!parser.Check(TokenType::RIGHT_PAREN)) {

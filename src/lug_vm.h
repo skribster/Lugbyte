@@ -27,13 +27,27 @@ class VMCore {
     
     void DefineNative(const char* name, NativeFn function);
     void AddObject(Obj* obj);
+
     void Push(Value value);
     Value& Peek(std::size_t distance) const;
     Value Pop();
-    
+
+    void CallValue(Value value, std::uint8_t argCount);
+    void Call(ObjClosure* closure, std::uint8_t argCount);
+    ObjUpvalue* CaptureUpvalue(Value* local);
+    void CloseUpvalues(Value* last);
+
+    void ResetStack();
+
     Table strings;
     Table globals;
     Obj* objects{ nullptr };
+
+    CallFrame frames[FRAMES_MAX];
+    std::size_t frameCount{ 0 };
+    Value stack[STACK_MAX];
+    Value* stackTop{ nullptr };
+    ObjUpvalue* openUpvalues{ nullptr };
     
     template<typename... Args>
     [[noreturn]] void RuntimeError(const char* format, Args... args);
@@ -41,23 +55,9 @@ class VMCore {
     std::size_t bytesAllocated{ 0 };
     
 private:
-    void ResetStack();
     void Concatenate();
     int ClampIndex(int index, int numItems);
-    
-    void CallValue(Value value, std::uint8_t argCount);
-    void Call(ObjClosure* closure, std::uint8_t argCount);
-    ObjUpvalue* CaptureUpvalue(Value* local);
-    void CloseUpvalues(Value* last);
-
-    void Run();
-    
-    CallFrame frames[FRAMES_MAX];
-    std::size_t frameCount{ 0 };
-    Value stack[STACK_MAX];
-    Value* stackTop{ nullptr };
-    
-    ObjUpvalue* openUpvalues{ nullptr };
+    void Run(std::size_t stopDepth);
     
     LugError lastError;
 
@@ -99,6 +99,13 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     LugError error;
     error.type = ErrorType::RUNTIME;
     error.message = errorMessage;
+
+    ObjString* messageValue = ObjString::CopyFrom(
+        *this, errorMessage.c_str(), 
+        std::strlen(errorMessage.c_str())
+    );
+
+    Push(messageValue);
 
     throw error;
 }

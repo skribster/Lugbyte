@@ -28,7 +28,7 @@ struct Obj {
     virtual ~Obj() = default;
     virtual void Print();
 
-    const char* StringType() const;
+    static const char* StringType(ObjType type);
 
     VMCore& vm;
     ObjType type;
@@ -166,6 +166,8 @@ struct ObjThing : Obj {
     
     Value Get(Value field) const;
     void Set(Value key, Value field);
+    // Small shortcut for setting a string field.
+    void Set(const char* key, Value field);
 
     static ObjThing* New(VMCore& vm);
 };

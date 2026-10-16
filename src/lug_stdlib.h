@@ -11,6 +11,9 @@ struct NativeEntry {
     NativeFn function;
 };
 
+
+ObjThing* NewLib(VMCore& vm, const char* libraryName);
+
 /**
  * Helper function for defining all the native functions of
  * a given library and adding them inside the VM's environment.
@@ -20,31 +23,14 @@ struct NativeEntry {
  * will be stuffed into one `thing` global.
  */
 template<std::size_t N>
-void DefineLib(VMCore& vm, const char* libraryName, const NativeEntry (&entries)[N]) {
-    if (!libraryName) {
+void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
+    if (library == nullptr) {
         for (auto& entry : entries) {
             vm.DefineNative(entry.name, entry.function);
         }
 
         return;
     }
-
-    // Otherwise...
-
-    ObjString* nameValue = ObjString::CopyFrom(vm, libraryName, std::strlen(libraryName));
-    vm.Push(nameValue);
-
-    // Check if we already defined the library before in the globals.
-    if (vm.globals.Get(nameValue) == nullptr) {
-        ObjThing* library = ObjThing::New(vm);
-        vm.Push(library);
-        vm.globals.Set(nameValue, library);
-        vm.Pop(); // Library;
-    }
-
-    ObjThing* library = vm.globals.Get(nameValue)->AsObj<ObjThing>();
-
-    vm.Pop(); // nameValue
 
     for (const NativeEntry& entry : entries) {
         ObjString* entryName = ObjString::CopyFrom(vm, entry.name, std::strlen(entry.name));
@@ -62,5 +48,8 @@ void DefineLib(VMCore& vm, const char* libraryName, const NativeEntry (&entries)
 // Library open functions -------------------------
 
 extern void OpenBase(VMCore& vm);
+extern void OpenMath(VMCore& vm);
+extern void OpenString(VMCore& vm);
+extern void OpenCollection(VMCore& vm);
 
 }

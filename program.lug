@@ -1,5 +1,0 @@
-box a <- [ 5 ]
-box b <- a
-
-print(a)
-print(b)

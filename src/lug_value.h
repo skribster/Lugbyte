@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace Luggage {
 
 enum class ValueType {
@@ -20,8 +22,7 @@ enum class ObjType;
  * Represents a single Luggage dynamic value.
  */
 struct Value {
-    public:
-
+public:
     Value() : type(ValueType::NIL) { as.number = 0; }
 
     bool operator==(const Value& other) const;
@@ -46,7 +47,9 @@ struct Value {
 
     // Type-checking methods for checking the type of a struct Value
     inline bool IsNumber() const        { return type == ValueType::NUMBER; }
+    inline bool IsNan() const           { return IsNumber() && std::isnan(AsNumber()); }
     inline bool IsInteger() const       { return IsNumber() && static_cast<int>(AsNumber()) == AsNumber(); }
+
     inline bool IsBool() const          { return type == ValueType::BOOLEAN; }
     inline bool IsNil() const           { return type == ValueType::NIL; }
     inline bool IsObj() const           { return type == ValueType::OBJ; }
@@ -57,6 +60,9 @@ struct Value {
     // I like the convention of passing in the value to Print()
     // because it looks better..........
     static void Print(const Value& value);
+    static const char* StringType(ValueType type);
+    static const char* StringType(ObjType type);
+
     const char* StringType() const;
     std::uint32_t GetHash() const;
 

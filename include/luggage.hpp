@@ -14,10 +14,12 @@ enum class ErrorType {
 
 
 enum class LibInclude : unsigned {
-    NONE    = 0,
-    BASE    = 1 << 0,   // 0001
-    MATH    = 1 << 1,   // 0010
-    ALL     = BASE | MATH
+    NONE            = 0,
+    BASE            = 1 << 0,   // 0001
+    MATH            = 1 << 1,   // 0010
+    STRING          = 1 << 2,   // 0100...
+    COLLECTION      = 1 << 3,
+    ALL             = BASE | MATH | STRING | COLLECTION
 };
 
 

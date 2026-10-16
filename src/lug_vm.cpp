@@ -139,9 +139,12 @@ void VMCore::AddObject(Obj* object) {
 }
 
 
+/**
+ * This function will attempt to call any value of any type.
+ */
 void VMCore::CallValue(Value value, std::uint8_t argCount) {
     if (!value.IsObj()) {
-        RuntimeError("Can't call values of type '%s'.", value.StringType());
+        RuntimeError("Attempted to call a '%s' value.", value.StringType());
     }
 
     switch (value.AsObj()->type) {
@@ -162,12 +165,16 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
         }
 
         default: {
-            RuntimeError("Can only call functions.");
+            RuntimeError("Attempted to call a '%s' value.", value.StringType());
         }
     }
 }
 
 
+/**
+ * This function will call a given callee and run the interpreter
+ * until the function finishes.
+ */
 void VMCore::Call(ObjClosure* closure, std::uint8_t argCount) {
     if (argCount != closure->function->arity) {
         RuntimeError("Expected %d arguments but got %d.", closure->function->arity, argCount);
@@ -177,10 +184,19 @@ void VMCore::Call(ObjClosure* closure, std::uint8_t argCount) {
         RuntimeError("Stack overflow.");
     }
 
+    /*
+        A function is considered 'finished'
+        when the call frame count returns back to the original depth before
+        the function was called.
+    */
+    std::size_t oldDepth = frameCount;
+
     CallFrame& frame = frames[frameCount++];
     frame.closure = closure;
     frame.ip = closure->function->chunk.bytecode;
     frame.slots = stackTop - argCount - 1;
+    
+    Run(oldDepth);
 }
 
 
@@ -223,7 +239,7 @@ void VMCore::CloseUpvalues(Value* last) {
  * The actual interpreter loop where it runs 
  * each instruction from its chunk.
  */
-void VMCore::Run() {
+void VMCore::Run(std::size_t stopDepth) {
     CallFrame* frame = &frames[frameCount - 1];
 
     #define READ_BYTE() (*frame->ip++)
@@ -713,9 +729,11 @@ void VMCore::Run() {
                     ObjList* list = collection.AsObj<ObjList>();
                     int index = Pop().AsInteger();
                     index = ClampIndex(index, list->itemCount);
-        
+                    
                     Value value = list->Get(index);
                     Push(value);
+
+                    break;
                 }
 
                 case ObjType::DICTIONARY: {
@@ -728,6 +746,8 @@ void VMCore::Run() {
                     Pop(); // Collection
                     
                     Push(value);
+                    
+                    break;
                 }
             }
 
@@ -777,10 +797,6 @@ void VMCore::Run() {
                 }
             }
 
-
-            
-
-
             DISPATCH();
         }
 
@@ -802,7 +818,6 @@ void VMCore::Run() {
 
             DISPATCH();
         }
-
 
         CASE(SET_ATTRIBUTE): {
             ObjString* attributeName = READ_STRING();
@@ -837,13 +852,12 @@ void VMCore::Run() {
             CloseUpvalues(frame->slots);
 
             frameCount--;
-            if (frameCount == 0) {
-                Pop();
+            stackTop = frame->slots;
+            Push(result);
+            if (frameCount == stopDepth) {
                 return;
             }
 
-            stackTop = frame->slots;
-            Push(result);
             frame = &frames[frameCount - 1];
 
             DISPATCH(); // Break out of the interpreter loop.
@@ -893,7 +907,11 @@ bool VM::Interpret(std::string_view source) {
         core->Pop();
         core->Push(closure);
         core->Call(closure, 0);
-        core->Run();
+
+        // Pop the return value. During the REPL, the last OP_RETURN
+        // started to push the 'nil' value onto the very bottom of the
+        // stack, causing a bunch of 'nil' values to accumulate at the bottom. 
+        core->Pop();
 
     } catch (LugError error) {
         core->lastError = error;
@@ -926,8 +944,11 @@ constexpr bool operator&(LibInclude a, LibInclude b) {
 
 
 void VM::LoadLibrary(LibInclude libraries) {
-    if (libraries & LibInclude::NONE) return;
-    if (libraries & LibInclude::BASE) Lib::OpenBase(*core);
+    if (libraries & LibInclude::NONE)           return;
+    if (libraries & LibInclude::BASE)           Lib::OpenBase(*core);
+    if (libraries & LibInclude::MATH)           Lib::OpenMath(*core);
+    if (libraries & LibInclude::STRING)         Lib::OpenString(*core);
+    if (libraries & LibInclude::COLLECTION)     Lib::OpenCollection(*core);
 }
 
 }

@@ -90,17 +90,30 @@ void Value::Print(const Value& value) {
 
 
 const char* Value::StringType() const {
+    if (IsObj()) {
+        return Value::StringType(AsObj()->type);
+    } else {
+        return Value::StringType(type);
+    }
+}
+
+
+const char* Value::StringType(ValueType type) {
     switch (type) {
         case ValueType::BOOLEAN:    return "boolean";
         case ValueType::NIL:        return "nil";
         case ValueType::NUMBER:     return "number";
-        case ValueType::OBJ:        return AsObj()->StringType();
 
         default: {
             UNREACHABLE();
             return "unknown";
         }
     }
+}
+
+
+const char* Value::StringType(ObjType type) {
+    return Obj::StringType(type);
 }
 
 
