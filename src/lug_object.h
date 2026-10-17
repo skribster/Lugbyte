@@ -46,6 +46,7 @@ struct ObjString : Obj {
 
     // Factory methods to create a new ObjString on the heap
     static ObjString* CopyFrom(VMCore& vm, const char* original, std::size_t length);
+    static ObjString* CopyFrom(VMCore& vm, const char* literal);
     static ObjString* TakeFrom(VMCore& vm, char* chars, std::size_t length);
 
     char* characters{ nullptr };
@@ -165,6 +166,7 @@ struct ObjThing : Obj {
     Table attributes;
     
     Value Get(Value field) const;
+    Value Get(const char* field) const;
     void Set(Value key, Value field);
     // Small shortcut for setting a string field.
     void Set(const char* key, Value field);

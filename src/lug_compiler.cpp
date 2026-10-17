@@ -1019,10 +1019,10 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  &Compiler::Binary,      Precedence::TERM },             // PLUS
     { nullptr,                  nullptr,                Precedence::NONE },             // QUESTION
     { nullptr,                  nullptr,                Precedence::NONE },             // SEMICOLON
-    { nullptr,                  nullptr,                Precedence::NONE },             // COLON
+    { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // COLON
     { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // SLASH
     { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // STAR
-    { nullptr,                  nullptr,                Precedence::NONE },             // MODULO
+    { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // PERCENT
     
     // One-or-two character tokens
     { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },         // EQUAL
@@ -1111,7 +1111,7 @@ void Compiler::Grouping(bool canAssign) {
  * Parses () postfix.
  */
 void Compiler::Call(bool canAssign) {
-    std::uint8_t argCount = ArgumentList();
+    std::uint8_t argCount = ArgumentList(UINT8_COUNT);
     EmitBytes(OpCode::CALL, argCount);
     isValidExprStmt = true;
 }
@@ -1120,7 +1120,7 @@ void Compiler::Call(bool canAssign) {
 /**
  * Parses a list of arguments ended with a parenthesis.
  */
-std::uint8_t Compiler::ArgumentList() {
+std::uint8_t Compiler::ArgumentList(std::size_t argcMax) {
     std::uint8_t argCount = 0;
 
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
@@ -1157,9 +1157,27 @@ void Compiler::Index(bool canAssign) {
 
 
 void Compiler::Dot(bool canAssign) {
-    parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'.");
+    // Can either be a . or :
+    Token dotted = parser.previous;
+    if (dotted.type == TokenType::COLON) {
+        parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after ':'");
+    } else {
+        parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'");
+    }
+
     std::uint8_t name = IdentifierConstant(parser.previous);
-    
+
+    if (dotted.type == TokenType::COLON) {
+        parser.Consume(TokenType::LEFT_PAREN, "Expected function call after colon-accessed attribute.");
+
+        EmitBytes(OpCode::SELF, name);
+        std::uint8_t argCount = ArgumentList(UINT8_COUNT - 1);
+        EmitBytes(OpCode::CALL, argCount + 1);
+        isValidExprStmt = true;
+
+        return;
+    }
+
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
         Expression();
         EmitBytes(OpCode::SET_ATTRIBUTE, name);
@@ -1225,6 +1243,7 @@ void Compiler::Binary(bool canAssign) {
         case TokenType::MINUS:          EmitByte(OpCode::SUBTRACT); break;
         case TokenType::STAR:           EmitByte(OpCode::MULTIPLY); break;
         case TokenType::SLASH:          EmitByte(OpCode::DIVIDE); break;
+        case TokenType::PERCENT:        EmitByte(OpCode::MODULO); break;
 
         default: UNREACHABLE(); // Unreachable.
     }

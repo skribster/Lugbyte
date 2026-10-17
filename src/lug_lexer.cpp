@@ -305,6 +305,7 @@ Token Lexer::ScanToken() {
         case '/': return MakeToken(TokenType::SLASH);
         case '*': return MakeToken(TokenType::STAR);
         case '=': return MakeToken(TokenType::EQUAL);
+        case '%': return MakeToken(TokenType::PERCENT);
 
         case '!':
             if (Match('=')) return MakeToken(TokenType::BANG_EQUAL);

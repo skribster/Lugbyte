@@ -59,6 +59,10 @@ const char* Obj::StringType(ObjType type) {
         case ObjType::UPVALUE:      
             return "upvalue";
 
+        case ObjType::THING: {
+            return "thing";
+        }
+
         // These are behind-the-scenes objects that
         // the user probably can't access.
         case ObjType::FUNCTION: 
@@ -134,6 +138,24 @@ ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t len
     heapChars[length] = '\0';
 
     return AllocateString(vm, heapChars, length, hash);
+}
+
+
+/**
+ * You can only use this kind of constructor if you are sure
+ * that the passed-in string ends with a null terminator, for instance,
+ * string literals are safe. However, strings that are part of a bigger
+ * string (i.e. the source code) are not safe to copy from because that 
+ * smaller part doesn't have a null terminator, since it
+ * will start to overflow to the other words after it.
+ * 
+ * ['h', 'e', 'l', 'l', 'o', '\0'] <- yes
+ * [... 's', 'u', 'b', ...] <- no guarantee of null terminator at the end of this
+ *      ^^^^^^^^^^^^^
+ * part of a larger string!
+ */
+ObjString* ObjString::CopyFrom(VMCore& vm, const char* literal) {
+    return CopyFrom(vm, literal, std::strlen(literal));
 }
 
 /**
@@ -382,9 +404,18 @@ void ObjThing::Print() {
 
 Value ObjThing::Get(Value key) const {
     Value* value = attributes.Get(key);
+    if (value != nullptr) return *value;
 
-    if (value == nullptr) return Value::Nil();
-    return *value;
+    Value* protoValue = attributes.Get("__proto__");
+    if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) return *value;
+
+    ObjThing* proto = protoValue->AsObj<ObjThing>();
+    return proto->Get(key);
+}   
+
+
+Value ObjThing::Get(const char* key) const {
+    return Get(ObjString::CopyFrom(vm, key, std::strlen(key)));
 }   
 
 

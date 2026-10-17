@@ -62,7 +62,7 @@ static constexpr NativeEntry stringLib[] = {
 // Function declaration of defined in lug_stdlib.h
 void OpenString(VMCore& vm) { 
     ObjThing* library = NewLib(vm, "string");
-    DefineLib(vm, library, stringLib); 
+    DefineLib(vm, library, stringLib);  
 }
 
 

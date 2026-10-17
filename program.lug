@@ -1,0 +1,17 @@
+box fizzBuzz <- function(length)
+    box res <- []
+    count i from 0 to length do
+        if i % 3 = 0 and i % 5 = 0 then
+            res:append("fizzbuzz")
+        elseif i % 3 = 0 then
+            res:append("fizz")
+        elseif i % 5 = 0 then
+            res:append("buzz")
+        else
+            res:append(i)
+        end
+    end
+
+    return res
+end
+

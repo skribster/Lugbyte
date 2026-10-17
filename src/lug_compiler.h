@@ -197,7 +197,7 @@ private:
 
     void Grouping(bool canAssign);
     void Call(bool canAssign);
-    std::uint8_t ArgumentList();
+    std::uint8_t ArgumentList(std::size_t argcMax);
     void Index(bool canAssign);
     void Dot(bool canAssign);
 

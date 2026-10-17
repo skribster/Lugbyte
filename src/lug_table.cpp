@@ -47,6 +47,11 @@ Value* Table::Get(Value key) const {
     return &entry->value;
 }
 
+
+Value* Table::Get(const char* key) const {
+    return Get(ObjString::CopyFrom(vm, key));
+}
+
 /**
  * Removes a key from the hash table.
  * Returns true if success. Returns false if no removal.

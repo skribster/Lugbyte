@@ -16,6 +16,7 @@
     OPCODE(SUBTRACT)                \
     OPCODE(MULTIPLY)                \
     OPCODE(DIVIDE)                  \
+    OPCODE(MODULO)                  \
                                     \
     OPCODE(EQUAL)                   \
     OPCODE(GREATER)                 \
@@ -48,6 +49,7 @@
     OPCODE(CLOSE_UPVALUE)           \
                                     \
     OPCODE(CALL)                    \
+    OPCODE(SELF)                    \
     OPCODE(CLOSURE)                 \
                                     \
     OPCODE(LIST)                    \

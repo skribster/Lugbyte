@@ -38,6 +38,7 @@ class VMCore {
     void CloseUpvalues(Value* last);
 
     void ResetStack();
+    ObjThing* GetProtoOf(Value value);
 
     Table strings;
     Table globals;

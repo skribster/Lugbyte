@@ -21,6 +21,7 @@ public:
 
     bool Set(Value key, Value value);
     Value* Get(Value key) const;
+    Value* Get(const char* keyName) const;
     bool Delete(Value key);
     
     ObjString* FindString(

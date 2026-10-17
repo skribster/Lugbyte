@@ -228,6 +228,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return byteInstruction("OP_CALL", chunk, offset);
         }
 
+        case OpCode::SELF: {
+            return constantInstruction("OP_SELF", chunk, offset);
+        }
+
         case OpCode::CLOSURE: {
             offset++;
             

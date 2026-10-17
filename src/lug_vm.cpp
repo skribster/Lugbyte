@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 
 #include "lug_vm.h"
 #include "lug_opcodes.h"
@@ -73,6 +74,22 @@ void VMCore::ResetStack() {
 }
 
 
+ObjThing* VMCore::GetProtoOf(Value value) {
+    Value* proto = nullptr;
+    if (value.IsObj(ObjType::STRING)) {
+        proto = globals.Get("string");
+    } else if (value.IsObj(ObjType::LIST)) {
+        proto = globals.Get("list");
+    }
+
+    if (!proto->IsObj(ObjType::THING)) {
+        return nullptr;
+    }
+
+    return proto->AsObj<ObjThing>();
+}
+
+
 /**
  * Clamps a list index given the list's number of items.
  * If it's negative, it will wrap around to the end of the list.
@@ -120,7 +137,7 @@ void VMCore::Concatenate() {
  * the given name.
  */
 void VMCore::DefineNative(const char* name, NativeFn function) {
-    Push(ObjString::CopyFrom(*this, name, std::strlen(name)));
+    Push(ObjString::CopyFrom(*this, name));
     Push(ObjNative::New(*this, name, function));
 
     globals.Set(Peek(1).AsObj<ObjString>(), Peek(0));
@@ -143,31 +160,37 @@ void VMCore::AddObject(Obj* object) {
  * This function will attempt to call any value of any type.
  */
 void VMCore::CallValue(Value value, std::uint8_t argCount) {
-    if (!value.IsObj()) {
-        RuntimeError("Attempted to call a '%s' value.", value.StringType());
+    if (value.IsObj()) {
+        switch (value.AsObj()->type) {
+            case ObjType::CLOSURE: {
+                return Call(value.AsObj<ObjClosure>(), argCount);
+            }
+    
+            case ObjType::NATIVE: {
+                ObjNative* native = value.AsObj<ObjNative>();
+                Value result = native->function(*this, stackTop - argCount, argCount);
+    
+                // Rewind the stack right before the ObjNative.
+                stackTop -= argCount + 1;
+    
+                // Push the result of the function.
+                Push(result);
+                return;
+            }
+    
+            case ObjType::THING: {
+                // Check if the 'thing' has a '__call__' dunder 
+                // attached to it.
+                ObjThing* thing = value.AsObj<ObjThing>();
+                Value callDunder = thing->Get("__call__");
+                if (callDunder.IsObj(ObjType::CLOSURE)) {
+                    return Call(callDunder.AsObj<ObjClosure>(), argCount);
+                }
+            }
+        }
     }
 
-    switch (value.AsObj()->type) {
-        case ObjType::CLOSURE: {
-            return Call(value.AsObj<ObjClosure>(), argCount);
-        }
-
-        case ObjType::NATIVE: {
-            ObjNative* native = value.AsObj<ObjNative>();
-            Value result = native->function(*this, stackTop - argCount, argCount);
-
-            // Rewind the stack right before the ObjNative.
-            stackTop -= argCount + 1;
-
-            // Push the result of the function.
-            Push(result);
-            break;
-        }
-
-        default: {
-            RuntimeError("Attempted to call a '%s' value.", value.StringType());
-        }
-    }
+    RuntimeError("Attempted to call a '%s' value.", value.StringType());
 }
 
 
@@ -393,6 +416,20 @@ void VMCore::Run(std::size_t stopDepth) {
             }
 
             BINARY_OP(/);
+            DISPATCH();
+        }
+
+        CASE(MODULO): {
+            Value bValue = Pop();
+            Value aValue = Pop();
+            if (!aValue.IsNumber() || !bValue.IsNumber()) {           
+                RuntimeError("Operands must be numbers.");
+            }    
+
+            double a = aValue.AsNumber();
+            double b = bValue.AsNumber();
+            Push(a - std::floor(a / b) * b);
+            
             DISPATCH();
         }
 
@@ -655,6 +692,32 @@ void VMCore::Run(std::size_t stopDepth) {
             DISPATCH();
         }
 
+        CASE(SELF): {
+            ObjString* methodName = READ_STRING();
+            Value object = Pop();
+            ObjThing* thing = nullptr;
+
+            if (object.IsObj(ObjType::THING)) {
+                thing = object.AsObj<ObjThing>();
+
+            } else if (GetProtoOf(object) != nullptr) {
+                thing = GetProtoOf(object);
+
+            } else {
+                RuntimeError(
+                    "Method '%s' does not exist on value of type '%s'.", 
+                    methodName->characters, 
+                    Peek(0).StringType()
+                );
+            }
+
+            Value value = thing->Get(methodName);
+            Push(value);
+            Push(object);
+
+            DISPATCH();
+        }
+
         CASE(CLOSURE): {
             ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
             ObjClosure* closure = ObjClosure::New(*this, function);
@@ -746,7 +809,7 @@ void VMCore::Run(std::size_t stopDepth) {
                     Pop(); // Collection
                     
                     Push(value);
-                    
+
                     break;
                 }
             }
@@ -776,11 +839,8 @@ void VMCore::Run(std::size_t stopDepth) {
                     index = ClampIndex(index, list->itemCount);
 
                     list->Set(index, newValue); 
-                    Pop(); // New value
-                    Pop(); // Index
-                    Pop(); // Collection
 
-                    Push(newValue);
+                    break;
                 }
 
                 case ObjType::DICTIONARY: {
@@ -789,13 +849,15 @@ void VMCore::Run(std::size_t stopDepth) {
                     Value key = Peek(1);
                     dictionary->Set(key, newValue);
 
-                    Pop(); // New value
-                    Pop(); // Index
-                    Pop(); // Collectione
-
-                    Push(newValue);
+                    break;
                 }
             }
+
+            Pop(); // New value
+            Pop(); // Index
+            Pop(); // Collection
+
+            Push(newValue);
 
             DISPATCH();
         }
@@ -803,18 +865,29 @@ void VMCore::Run(std::size_t stopDepth) {
         CASE(GET_ATTRIBUTE): {
             ObjString* attributeName = READ_STRING();
 
-            if (!Peek(0).IsObj(ObjType::THING)) {
-                RuntimeError(
-                    "Attribute '%s' does not exist on value of type '%s'.", 
-                    attributeName->characters, 
-                    Peek(0).StringType()
-                );
+            if (Peek(0).IsObj(ObjType::THING)) {
+                ObjThing* thing = Peek(0).AsObj<ObjThing>();
+                Value value = thing->Get(attributeName);
+                Pop(); // Thing
+                Push(value);
+
+                DISPATCH();
             }
 
-            ObjThing* thing = Peek(0).AsObj<ObjThing>();
-            Value value = thing->Get(attributeName);
-            Pop(); // Thing
-            Push(value);
+            ObjThing* proto = GetProtoOf(Peek(0));
+            if (proto) {
+                Value value = proto->Get(attributeName);
+                Pop();
+                Push(value);
+
+                DISPATCH();
+            }
+            
+            RuntimeError(
+                "Attribute '%s' does not exist on value of type '%s'.", 
+                attributeName->characters, 
+                Peek(0).StringType()
+            );
 
             DISPATCH();
         }

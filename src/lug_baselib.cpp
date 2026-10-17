@@ -115,9 +115,9 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
 static Value Type(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
     
-    return args[0].StringType();
+    const char* stringType = args[0].StringType();
+    return ObjString::CopyFrom(vm, stringType, std::strlen(stringType));
 }
-
 
 
 // Library out ------------------------------

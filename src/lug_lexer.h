@@ -21,7 +21,7 @@ enum class TokenType {
     COLON,
     SLASH,
     STAR,
-    MODULO,
+    PERCENT,
 
 	// One-or-two character tokens
     EQUAL,
