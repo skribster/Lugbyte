@@ -548,8 +548,8 @@ void VMCore::Run(std::size_t stopDepth) {
             // where the loop would never run because the step is in the wrong direction.
             if (
                 step.AsNumber() > 0 ? 
-                start.AsNumber() > step.AsNumber() :
-                start.AsNumber() < step.AsNumber()
+                start.AsNumber() > stop.AsNumber() :
+                start.AsNumber() < stop.AsNumber()
             ) {
                 frame->ip += jumpToEnd;
             }
@@ -564,26 +564,137 @@ void VMCore::Run(std::size_t stopDepth) {
                   ^^^^^    ^^^^^    ^^^^^    ^^^^^
                   start    limit     step    stackTop
 
-                Where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
+                ...where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
             */
 
             std::uint16_t jumpToStart = READ_SHORT();
 
-            ASSERT(Peek(0).IsNumber(), "Invalid step");
-            ASSERT(Peek(1).IsNumber(), "Invalid limit");
+            Value& start = Peek(2);
+            Value& limit = Peek(1);
+            Value& step = Peek(0);
 
-            if (!Peek(2).IsNumber()) {
-                RuntimeError("'count' step must be a number.");
-            }
+            // COUNT_PREP should've already checked if these were numbers or not.
+            // If we still have them as not a number, then we should assert.
+            ASSERT(start.IsNumber(), "Invalid start");
+            ASSERT(limit.IsNumber(), "Invalid limit");
+            ASSERT(step.IsNumber(), "Invalid step");   
 
             // Increment index.
-            stackTop[-3] = Value(stackTop[-3].AsNumber() + stackTop[-1].AsNumber());
-            if (Peek(0).AsNumber() > 0 ? 
-                Peek(2).AsNumber() <= Peek(1).AsNumber() :
-                Peek(2).AsNumber() >= Peek(1).AsNumber()
+            start = start.AsNumber() + step.AsNumber();
+            if (step.AsNumber() > 0 ? 
+                start.AsNumber() <= limit.AsNumber() :
+                start.AsNumber() >= limit.AsNumber()
             ) {
                 // Repeat loop
                 frame->ip -= jumpToStart;
+            }
+
+            DISPATCH();
+        }
+
+        CASE(FOREACH_PREP): {
+            /*
+                When FOREACH_PREP is reached, the stack may look like this:
+                [  nil  ][  nil  ][  nil  ][   [1, 2, 3]   ]
+                 ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
+                probe idx  value  key/index    iterable     stackTop   
+
+                ...where the probing index, key, and value values are nil.
+            */
+
+            std::uint16_t jumpToEnd = READ_SHORT();
+
+            Value& value = Peek(2);
+            Value& key = Peek(1);
+            Value& iterable = Peek(0);
+            
+            if (iterable.IsObj(ObjType::LIST)) {
+                ObjList* list = iterable.AsObj<ObjList>();
+                if (!key.IsNumber()) key = 0;
+                value = list->Get(key.AsNumber());
+                
+                if (static_cast<std::size_t>(key.AsInteger()) >= list->itemCount) {
+                    frame->ip += jumpToEnd;
+                }
+            } 
+            
+            else if (iterable.IsObj(ObjType::DICTIONARY)) {
+                ObjDictionary* dict = iterable.AsObj<ObjDictionary>();
+                Value& probingIndex = Peek(3);
+                if (!probingIndex.IsNumber()) probingIndex = 0;
+
+                std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
+                while (
+                    index <= dict->dictionary.capacity 
+                    && dict->dictionary.entries[index].IsEmpty()
+                ) index++;
+
+                if (index == dict->dictionary.capacity) {
+                    frame->ip += jumpToEnd;
+                }
+
+                Entry& currentEntry = dict->dictionary.entries[index];
+                key = currentEntry.key;
+                value = currentEntry.value;
+                probingIndex = static_cast<int>(index);
+            } 
+            
+            else {
+                RuntimeError("'foreach' must iterate over an iterable type, got '%s' instead.", iterable.StringType());
+            }
+
+            DISPATCH();
+        }
+
+        CASE(FOREACH_LOOP): {
+            /*
+                When FOREACH_PREP is reached, the stack may look like this:
+                [  nil  ][   1   ][   0   ][   [1, 2, 3]   ]
+                 ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
+                probe idx  value  key/index    iterable     stackTop   
+            */
+
+            std::uint16_t jumpToStart = READ_SHORT();
+
+            Value& value = Peek(2);
+            Value& key = Peek(1);
+            Value& iterable = Peek(0);
+
+            if (iterable.IsObj(ObjType::LIST)) {
+                ObjList* list = iterable.AsObj<ObjList>();
+                key = key.AsInteger() + 1;
+
+                // Check if we exceeded the index count. If so, that means
+                // we're done with iterating through the list. Exit out of
+                // the loop.
+                if (key.AsInteger() < list->itemCount) {
+                    value = list->Get(key.AsInteger());
+                    frame->ip -= jumpToStart;
+                }
+            } 
+
+            else if (iterable.IsObj(ObjType::DICTIONARY)) {
+                ObjDictionary* dict = iterable.AsObj<ObjDictionary>();
+                Value& probingIndex = Peek(3);
+                ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
+
+                std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
+                do index++; while (
+                    index <= dict->dictionary.capacity 
+                    && dict->dictionary.entries[index].IsEmpty()
+                );
+
+                if (index < dict->dictionary.capacity) {
+                    Entry& currentEntry = dict->dictionary.entries[index];
+                    key = currentEntry.key;
+                    value = currentEntry.value;
+                    probingIndex = static_cast<int>(index);
+                    frame->ip -= jumpToStart;
+                }
+            }
+            
+            else {
+                ASSERT(false, "Invalid iterable");
             }
 
             DISPATCH();
@@ -794,16 +905,17 @@ void VMCore::Run(std::size_t stopDepth) {
                     index = ClampIndex(index, list->itemCount);
                     
                     Value value = list->Get(index);
+                    Pop(); // Collection
                     Push(value);
 
                     break;
                 }
 
                 case ObjType::DICTIONARY: {
-                    ObjDictionary* dictionary = collection.AsObj<ObjDictionary>();
+                    ObjDictionary* dict = collection.AsObj<ObjDictionary>();
 
                     Value key = Peek(0);
-                    Value value = dictionary->Get(key);
+                    Value value = dict->Get(key);
 
                     Pop(); // Key
                     Pop(); // Collection
@@ -837,7 +949,6 @@ void VMCore::Run(std::size_t stopDepth) {
 
                     int index = Peek(1).AsInteger();
                     index = ClampIndex(index, list->itemCount);
-
                     list->Set(index, newValue); 
 
                     break;
@@ -846,8 +957,17 @@ void VMCore::Run(std::size_t stopDepth) {
                 case ObjType::DICTIONARY: {
                     ObjDictionary* dictionary = collection.AsObj<ObjDictionary>();
 
+                    // Dictionaries have Lua semantics, where setting a key to nil
+                    // removes the entry entirely.
+                    // (i.e. a["hello"] <- nil removes the "hello" key as well, and
+                    // won't be counted in loops.)
+
                     Value key = Peek(1);
-                    dictionary->Set(key, newValue);
+                    if (newValue.IsNil()) {
+                        dictionary->Delete(key);
+                    } else {
+                        dictionary->Set(key, newValue);
+                    }
 
                     break;
                 }

@@ -11,6 +11,13 @@ struct ObjString;
 struct Entry {
     Value key{ Value::Nil() };
     Value value{ Value::Nil() };
+
+    /**
+     * Returns whether an entry is 'occupied'. An entry is occupied when its key
+     * holds an actual value. In this case, when the key is not a TOMBSTONE and 
+     * it's not nil.
+     */
+    inline bool IsEmpty() { return key.IsTombstone() || key.IsNil(); }
 };
 
 

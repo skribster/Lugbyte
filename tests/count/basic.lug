@@ -1,0 +1,10 @@
+count a from 1...5 do
+    print(a)
+end
+
+// Expect:
+// 1
+// 2
+// 3
+// 4
+// 5

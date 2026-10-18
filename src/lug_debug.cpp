@@ -180,6 +180,14 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return jumpInstruction("OP_COUNT_LOOP", -1, chunk, offset);
         }
 
+        case OpCode::FOREACH_PREP: {
+            return jumpInstruction("OP_FOREACH_PREP", 1, chunk, offset);
+        }
+
+        case OpCode::FOREACH_LOOP: {
+            return jumpInstruction("OP_FOREACH_LOOP", -1, chunk, offset);
+        }
+
         case OpCode::PLACEHOLDER: {
             return patchInstruction("OP_PLACEHOLDER", chunk, offset);
         }

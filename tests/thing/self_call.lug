@@ -1,0 +1,10 @@
+box enemy <- thing()
+enemy.health <- 10
+
+enemy.takeDamage <- function(self, damage)
+    self.health <- self.health - damage
+end
+
+print(enemy.health) // Expect: 10
+enemy:takeDamage(2)
+print(enemy.health) // Expect: 8

@@ -1,0 +1,6 @@
+box values <- [10, 20, 30]
+
+box copy <- values:clone()
+copy[0] <- 99
+print(values[0]) // Expect: 10
+print(copy[0]) // Expect: 99

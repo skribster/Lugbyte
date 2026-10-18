@@ -326,7 +326,7 @@ void ObjList::Append(Value value) {
 }
 
 
-Value ObjList::Get(int index) const {
+Value& ObjList::Get(int index) const {
     return items[index];
 }
 
@@ -381,6 +381,11 @@ Value ObjDictionary::Get(Value key) const {
 
 void ObjDictionary::Set(Value key, Value value) {
     dictionary.Set(key, value);
+}
+
+
+void ObjDictionary::Delete(Value key) {
+    dictionary.Delete(key);
 }
 
 

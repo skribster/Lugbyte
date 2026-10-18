@@ -1,0 +1,6 @@
+box person <- thing()
+person.name <- "John"
+person.age <- 5
+
+print(person.name) // Expect: John
+print(person.age) // Expect: 5

@@ -1,0 +1,9 @@
+box a <- []
+a:append(1)
+print(a) // Expect: [ 1 ]
+a:append(2)
+print(a) // Expect: [ 1, 2 ]
+a:append(3)
+print(a) // Expect: [ 1, 2, 3 ]
+a:append(4)
+print(a) // Expect: [ 1, 2, 3, 4 ]

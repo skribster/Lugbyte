@@ -393,6 +393,13 @@ std::uint8_t Compiler::ParseVariable(const char* errorMessage) {
 }
 
 
+/**
+ * Declares the parser's previous token (presumed identifier)
+ * as a variable. For any local variable, that means
+ * adding it to the current unit's locals array. For global
+ * variables, 'declaring' a variable is already handled in bytecode,
+ * so this does nothing.
+ */
 void Compiler::DeclareVariable() {
     if (currentUnit->scopeDepth == 0) return;
 
@@ -702,6 +709,10 @@ bool Compiler::Statement() {
         CountStatement();
     }
 
+    else if (parser.Match(TokenType::FOREACH)) {
+        ForeachStatement();
+    }
+
     else if (parser.Match(TokenType::BREAK)) {
         BreakStatement();
         lastStatement = true;
@@ -901,13 +912,13 @@ void Compiler::InspectStatement() {
 
 
 void Compiler::CountStatement() {
-    // 'count' identifier 'from' expression 'to' expression 'by' expression 'do' block 'end'
+    // 'count' IDENTIFIER 'from' expression 'to' expression 'by' expression 'do' block 'end'
 
     LoopContext loop{ OpCode::COUNT_LOOP };
 
     currentUnit->BeginScope();
 
-    // Parse the identifier as a new local.
+    // Parse the counter as a new local.
     ParseVariable("Expected variable name.");
     DefineVariable(0);
     
@@ -920,7 +931,7 @@ void Compiler::CountStatement() {
     EmitBytes(OpCode::SET_LOCAL, counter);
     
     // Condition --------------------------
-    parser.Consume(TokenType::TO, "Expected 'to' after start value.");
+    parser.Consume(TokenType::ELLIPSIS, "Expected '...' after start value.");
     Expression();
     currentUnit->AddHiddenLocal("$limit");
     
@@ -941,9 +952,57 @@ void Compiler::CountStatement() {
     currentUnit->BeginScope();
     StartLoop(loop);
 
-    parser.Consume(TokenType::DO, "Expected 'do' after count statement.");
+    parser.Consume(TokenType::DO, "Expected 'do' after count clauses.");
     Block();
     parser.Consume(TokenType::END, "Expected 'end' after count statement.");
+
+    currentUnit->EndScope();
+    EndLoop();
+
+    currentUnit->EndScope();
+}
+
+
+void Compiler::ForeachStatement() {
+    // 'foreach' IDENTIFIER ( 'at' IDENTIFIER )? 'in' expression 'do' block 'end'
+
+    LoopContext loop{ OpCode::FOREACH_LOOP };
+    currentUnit->BeginScope();
+
+    // If the iterator is a dictionary, we'll hold the current probing index
+    // in the first local slot. If not, then this will just be unused.
+    EmitByte(OpCode::NIL);
+    currentUnit->AddHiddenLocal("$probingIndex");
+
+    // Start by parsing the 'value' local and adding it as a local variable.
+    EmitByte(OpCode::NIL);
+    ParseVariable("Expected item name after 'foreach'.");
+    DefineVariable(0);
+    
+    // If we match 'at', that means we also have a variable for the key.
+    // The key will hold the value of '0' for now.
+    EmitByte(OpCode::NIL);
+    if (parser.Match(TokenType::AT)) {
+        ParseVariable("Expected key name after 'at'.");
+        DefineVariable(0);
+    }
+    
+    parser.Consume(TokenType::IN, "Expected 'in' after item name.");
+    Expression();
+    currentUnit->AddHiddenLocal("$iterator");
+
+    // Check at runtime whether these values are 
+    // valid (e.g. if the iterator is a valid type
+    // that can be iterated on)
+    loop.exitJump = EmitJump(OpCode::FOREACH_PREP);
+    
+    // Actual loop body --------------------------
+    currentUnit->BeginScope();
+    StartLoop(loop);
+
+    parser.Consume(TokenType::DO, "Expected 'do' after foreach clauses.");
+    Block();
+    parser.Consume(TokenType::END, "Expected 'end' after foreach statement.");
 
     currentUnit->EndScope();
     EndLoop();
@@ -1015,6 +1074,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACKET
     { nullptr,                  nullptr,                Precedence::NONE },             // COMMA
     { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // DOT
+    { nullptr,                  nullptr,                Precedence::NONE },             // Ellipsis
     { &Compiler::Unary,         &Compiler::Binary,      Precedence::TERM },             // MINUS
     { nullptr,                  &Compiler::Binary,      Precedence::TERM },             // PLUS
     { nullptr,                  nullptr,                Precedence::NONE },             // QUESTION
@@ -1040,6 +1100,7 @@ const ParseRule Compiler::rules[] = {
 
     // Keywords         
     { nullptr,                  &Compiler::And,         Precedence::AND },              // AND
+    { nullptr,                  nullptr,                Precedence::AND },              // AT
     { nullptr,                  nullptr,                Precedence::NONE },             // BOX
     { nullptr,                  nullptr,                Precedence::NONE },             // BREAK
     { nullptr,                  nullptr,                Precedence::NONE },             // BY
@@ -1063,7 +1124,6 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARE
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARED
     { nullptr,                  nullptr,                Precedence::NONE },             // THEN
-    { nullptr,                  nullptr,                Precedence::NONE },             // TO
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // TRUE
     { nullptr,                  nullptr,                Precedence::NONE },             // WHEN
     { nullptr,                  nullptr,                Precedence::NONE },             // WHILE
@@ -1387,8 +1447,10 @@ void Compiler::Dictionary(bool canAssign) {
     
     if (!parser.Check(TokenType::RIGHT_BRACE)) {
         do {
-            Expression();
-            parser.Consume(TokenType::COLON, "Expected ':' after key.");
+            // Parse only primary for dictionary literals. Having things like function calls
+            // as keys can be considered clutter.
+            ParsePrecedence(Precedence::PRIMARY);
+            parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after key.");
             Expression();
             EmitByte(OpCode::DEFINE_ENTRY);
             

@@ -34,6 +34,8 @@
     OPCODE(LOOP)                    \
     OPCODE(COUNT_PREP)              \
     OPCODE(COUNT_LOOP)              \
+    OPCODE(FOREACH_PREP)            \
+    OPCODE(FOREACH_LOOP)            \
     OPCODE(PLACEHOLDER)             \
                                     \
     OPCODE(POP)                     \

@@ -187,6 +187,7 @@ private:
     void BreakStatement();
     void InspectStatement();
     void CountStatement();
+    void ForeachStatement();
     void ContinueStatement();
     void ReturnStatement();
     void ExpressionStatement();

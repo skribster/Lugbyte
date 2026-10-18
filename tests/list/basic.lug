@@ -1,0 +1,10 @@
+box values <- [10, 20, 30]
+print(type(values))
+print(values[0])
+print(values[-1])
+
+values[1] <- 25
+values:append(40)
+print(values[1])
+print(values[3])
+

@@ -128,7 +128,7 @@ struct ObjList : Obj {
     std::size_t itemCapacity{ 0 };
 
     void Append(Value value);
-    Value Get(int index) const;
+    Value& Get(int index) const;
     void Set(int index, Value value);
 
     static ObjList* New(VMCore& vm);
@@ -149,6 +149,7 @@ struct ObjDictionary : Obj {
 
     Value Get(Value key) const;
     void Set(Value key, Value value);
+    void Delete(Value key);
 
     static ObjDictionary* New(VMCore& vm);
 };

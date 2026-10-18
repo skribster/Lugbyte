@@ -1,0 +1,15 @@
+box values <- { 1 <- 10, 2 <- 20, 3 <- 30 }
+print(type(values))
+print(values[1])
+print(values[2])
+print(values[4])
+
+values[2] <- 25
+print(values[2])
+
+box total <- 0
+foreach value at key in values do
+    total <- total + key + value
+end
+
+print(total)

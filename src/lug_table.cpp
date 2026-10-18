@@ -24,12 +24,12 @@ bool Table::Set(Value key, Value value) {
     }
 
     Entry* entry = FindEntry(key);
-    bool isNewKey = entry->key.IsNil();
+    bool isNewKey = entry->IsEmpty();
 
     // If we reached a new key and it's NOT a tombstone,
     // increment the count. Tombstones have no effect
     // on the count.
-    if (isNewKey) count++;
+    if (isNewKey && !entry->key.IsTombstone()) count++;
 
     entry->key = key;
     entry->value = value;
@@ -42,7 +42,7 @@ Value* Table::Get(Value key) const {
     if (count == 0) return nullptr;
 
     Entry* entry = FindEntry(key);
-    if (entry->key.IsTombstone() || entry->key.IsNil()) return nullptr;
+    if (entry->IsEmpty()) return nullptr;
 
     return &entry->value;
 }

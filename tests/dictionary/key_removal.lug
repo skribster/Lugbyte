@@ -1,0 +1,17 @@
+box d <- { "a" <- 10, "b" <- 20, "c" <- 30 }
+
+box valueSum <- 0
+foreach value at key in d do
+    valueSum <- valueSum + value
+end
+
+print(valueSum) // Expect: 60
+
+box valueSum2 <- 0
+d["a"] <- nil // Should remove the entry altogether.
+
+foreach value at key in d do
+    valueSum2 <- valueSum2 + value
+end
+
+print(valueSum2) // Expect: 50

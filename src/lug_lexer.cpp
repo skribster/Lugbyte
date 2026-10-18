@@ -36,6 +36,7 @@ struct Keyword {
 
 static Keyword keywords[] = {
 	{"and",			3,	TokenType::AND},
+	{"at",			2,	TokenType::AT},
 	{"box",			3,	TokenType::BOX},
 	{"break",		5,	TokenType::BREAK},
 	{"by",			2,	TokenType::BY},
@@ -59,7 +60,6 @@ static Keyword keywords[] = {
 	{"share",		5,	TokenType::SHARE},
 	{"shared",		6,	TokenType::SHARED},
 	{"then",		4,	TokenType::THEN},
-	{"to",			2,	TokenType::TO},
 	{"true",		4,	TokenType::TRUE},
 	{"while",		5,	TokenType::WHILE},
 	{"when",		4,	TokenType::WHEN},
@@ -299,7 +299,14 @@ Token Lexer::ScanToken() {
         case ';': return MakeToken(TokenType::SEMICOLON);
         case ':': return MakeToken(TokenType::COLON);
         case ',': return MakeToken(TokenType::COMMA);
-        case '.': return MakeToken(TokenType::DOT);
+        case '.': 
+            if (Peek() == '.' && PeekNext() == '.') {
+                Advance();
+                Advance();
+                return MakeToken(TokenType::ELLIPSIS);
+            }
+
+            return MakeToken(TokenType::DOT);
         case '-': return MakeToken(TokenType::MINUS);
         case '+': return MakeToken(TokenType::PLUS);
         case '/': return MakeToken(TokenType::SLASH);

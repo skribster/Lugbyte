@@ -14,6 +14,7 @@ enum class TokenType {
     RIGHT_BRACKET,
     COMMA,
     DOT,
+    ELLIPSIS,
     MINUS,
     PLUS,
     QUESTION,
@@ -39,6 +40,7 @@ enum class TokenType {
 
     // Keywords
     AND,
+    AT,
     BOX,
     BREAK,
     BY,
@@ -62,7 +64,6 @@ enum class TokenType {
     SHARE,
     SHARED,
     THEN,
-    TO,
     TRUE,
     WHEN,
     WHILE,
