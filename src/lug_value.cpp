@@ -90,6 +90,9 @@ void Value::Print(const Value& value) {
 }
 
 
+/**
+ * Returns a string literal of the type of value.
+ */
 const char* Value::StringType() const {
     if (IsObj()) {
         return Value::StringType(AsObj()->type);

@@ -74,20 +74,93 @@ void VMCore::ResetStack() {
 }
 
 
-ObjThing* VMCore::GetProtoOf(Value value) {
-    Value* proto = nullptr;
-    if (value.IsObj(ObjType::STRING)) {
-        proto = globals.Get("string");
-    } else if (value.IsObj(ObjType::LIST)) {
-        proto = globals.Get("list");
-    }
-
-    if (!proto->IsObj(ObjType::THING)) {
+/**
+ * Gets a value's proto, if there is any.
+ */
+ObjThing* VMCore::GetProtoOf(Value value) const {
+    Value* proto = globals.Get(value.StringType());
+    if (proto == nullptr || !proto->IsObj(ObjType::THING)) {
         return nullptr;
     }
 
     return proto->AsObj<ObjThing>();
 }
+
+
+/**
+ * Returns back the stringified representation of a Luggage value.
+ */
+ObjString* VMCore::ToString(Value value) {
+    if (value.IsObj()) {
+        switch (value.AsObj()->type) {
+            case ObjType::STRING: {
+                return value.AsObj<ObjString>();
+            }
+
+            case ObjType::CLOSURE: {
+                ObjClosure* closure = value.AsObj<ObjClosure>();
+                ObjFunction* function = closure->function;
+
+                if (function->name == nullptr) {
+                    return ObjString::FromLiteral(*this, "<script>");
+                }
+                        
+                return ObjString::FromFormat(*this, "<fn %s>", function->name->characters);
+            }
+
+            case ObjType::LIST: {
+                ObjList* list = value.AsObj<ObjList>();
+                return ObjString::FromFormat(*this, "<list %p>", static_cast<void*>(list));
+            }
+
+            case ObjType::DICTIONARY: {
+                ObjDict* dict = value.AsObj<ObjDict>();
+                return ObjString::FromFormat(*this, "<dict %p>", static_cast<void*>(dict));
+            }
+
+            case ObjType::THING: {
+                ObjThing* thing = value.AsObj<ObjThing>();
+                
+                Value stringDunder = thing->Get("__tostring__");
+                if (!stringDunder.IsNil()) {
+                    Value t = Pop();
+                    Push(stringDunder);
+                    Push(t);
+
+                    CallValue(stringDunder, 1);
+                    Value result = Pop();
+                    if (!result.IsObj(ObjType::STRING)) {
+                        RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
+                    } 
+
+                    return result.AsObj<ObjString>();
+                }
+                
+                return ObjString::FromLiteral(*this, "<thing>");
+            }
+        }
+    }
+
+    switch (value.type) {
+        case ValueType::BOOLEAN: {
+            return ObjString::FromLiteral(*this, value.AsBool() ? "true" : "false");
+        }
+
+        case ValueType::NIL: {
+            return ObjString::FromLiteral(*this, "nil");
+        }
+
+        case ValueType::NUMBER: {
+            char buffer[20];
+            std::size_t length = std::snprintf(buffer, sizeof(buffer), "%.14g", value.AsNumber());
+            
+            return ObjString::FromSource(*this, buffer, length);
+        }
+    }
+
+    return nullptr;
+}
+
 
 
 /**
@@ -118,8 +191,8 @@ int VMCore::ClampIndex(int index, int itemCount) {
  * Then, pushes back the concatenated result.
  */
 void VMCore::Concatenate() {
-    ObjString* b = Pop().AsObj<ObjString>();
-    ObjString* a = Pop().AsObj<ObjString>();
+    ObjString* b = Peek(0).AsObj<ObjString>();
+    ObjString* a = Peek(1).AsObj<ObjString>();
 
     std::size_t length = a->length + b->length;
     char* chars = Memory::Allocate<char>(*this, length + 1);
@@ -127,7 +200,9 @@ void VMCore::Concatenate() {
     std::memcpy(chars + a->length, b->characters, b->length);
     chars[length] = '\0';
 
-    ObjString* result = ObjString::TakeFrom(*this, chars, length);
+    ObjString* result = ObjString::FromAllocated(*this, chars, length);
+    Pop();
+    Pop();
     Push(result);
 }
 
@@ -137,7 +212,7 @@ void VMCore::Concatenate() {
  * the given name.
  */
 void VMCore::DefineNative(const char* name, NativeFn function) {
-    Push(ObjString::CopyFrom(*this, name));
+    Push(ObjString::FromLiteral(*this, name));
     Push(ObjNative::New(*this, name, function));
 
     globals.Set(Peek(1).AsObj<ObjString>(), Peek(0));
@@ -163,33 +238,42 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
     if (value.IsObj()) {
         switch (value.AsObj()->type) {
             case ObjType::CLOSURE: {
-                return Call(value.AsObj<ObjClosure>(), argCount);
+                Call(value.AsObj<ObjClosure>(), argCount);
+                return;
             }
-    
+            
             case ObjType::NATIVE: {
                 ObjNative* native = value.AsObj<ObjNative>();
                 Value result = native->function(*this, stackTop - argCount, argCount);
-    
+                
                 // Rewind the stack right before the ObjNative.
                 stackTop -= argCount + 1;
-    
+                
                 // Push the result of the function.
                 Push(result);
                 return;
             }
-    
+            
             case ObjType::THING: {
                 // Check if the 'thing' has a '__call__' dunder 
                 // attached to it.
                 ObjThing* thing = value.AsObj<ObjThing>();
                 Value callDunder = thing->Get("__call__");
-                if (callDunder.IsObj(ObjType::CLOSURE)) {
-                    return Call(callDunder.AsObj<ObjClosure>(), argCount);
+                
+                CallValue(callDunder, argCount);
+                return;
+            }
+
+            default: {
+                ObjThing* valueProto = GetProtoOf(value);
+                if (valueProto != nullptr) {
+                    CallValue(valueProto, argCount);
+                    return;
                 }
             }
         }
     }
-
+    
     RuntimeError("Attempted to call a '%s' value.", value.StringType());
 }
 
@@ -619,7 +703,7 @@ void VMCore::Run(std::size_t stopDepth) {
             } 
             
             else if (iterable.IsObj(ObjType::DICTIONARY)) {
-                ObjDictionary* dict = iterable.AsObj<ObjDictionary>();
+                ObjDict* dict = iterable.AsObj<ObjDict>();
                 Value& probingIndex = Peek(3);
                 if (!probingIndex.IsNumber()) probingIndex = 0;
 
@@ -674,7 +758,7 @@ void VMCore::Run(std::size_t stopDepth) {
             } 
 
             else if (iterable.IsObj(ObjType::DICTIONARY)) {
-                ObjDictionary* dict = iterable.AsObj<ObjDictionary>();
+                ObjDict* dict = iterable.AsObj<ObjDict>();
                 Value& probingIndex = Peek(3);
                 ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
 
@@ -818,7 +902,7 @@ void VMCore::Run(std::size_t stopDepth) {
                 RuntimeError(
                     "Method '%s' does not exist on value of type '%s'.", 
                     methodName->characters, 
-                    Peek(0).StringType()
+                    object.StringType()
                 );
             }
 
@@ -861,7 +945,7 @@ void VMCore::Run(std::size_t stopDepth) {
         }
 
         CASE(DICTIONARY): {
-            ObjDictionary* newDictionary = ObjDictionary::New(*this);
+            ObjDict* newDictionary = ObjDict::New(*this);
             Push(newDictionary);
 
             DISPATCH();
@@ -875,7 +959,7 @@ void VMCore::Run(std::size_t stopDepth) {
         }
 
         CASE(DEFINE_ENTRY): {
-            ObjDictionary* dictionary = Peek(2).AsObj<ObjDictionary>();
+            ObjDict* dictionary = Peek(2).AsObj<ObjDict>();
             Value key = Peek(1);
             Value value = Peek(0);
 
@@ -912,7 +996,7 @@ void VMCore::Run(std::size_t stopDepth) {
                 }
 
                 case ObjType::DICTIONARY: {
-                    ObjDictionary* dict = collection.AsObj<ObjDictionary>();
+                    ObjDict* dict = collection.AsObj<ObjDict>();
 
                     Value key = Peek(0);
                     Value value = dict->Get(key);
@@ -955,7 +1039,7 @@ void VMCore::Run(std::size_t stopDepth) {
                 }
 
                 case ObjType::DICTIONARY: {
-                    ObjDictionary* dictionary = collection.AsObj<ObjDictionary>();
+                    ObjDict* dictionary = collection.AsObj<ObjDict>();
 
                     // Dictionaries have Lua semantics, where setting a key to nil
                     // removes the entry entirely.
@@ -995,7 +1079,7 @@ void VMCore::Run(std::size_t stopDepth) {
             }
 
             ObjThing* proto = GetProtoOf(Peek(0));
-            if (proto) {
+            if (proto && !proto->Get(attributeName).IsNil()) {
                 Value value = proto->Get(attributeName);
                 Pop();
                 Push(value);
@@ -1004,7 +1088,7 @@ void VMCore::Run(std::size_t stopDepth) {
             }
             
             RuntimeError(
-                "Attribute '%s' does not exist on value of type '%s'.", 
+                "Attribute '%s' does not exist in value of type '%s'.", 
                 attributeName->characters, 
                 Peek(0).StringType()
             );
@@ -1142,6 +1226,7 @@ void VM::LoadLibrary(LibInclude libraries) {
     if (libraries & LibInclude::MATH)           Lib::OpenMath(*core);
     if (libraries & LibInclude::STRING)         Lib::OpenString(*core);
     if (libraries & LibInclude::COLLECTION)     Lib::OpenCollection(*core);
+    if (libraries & LibInclude::NUMBER)         Lib::OpenNumber(*core);
 }
 
 }

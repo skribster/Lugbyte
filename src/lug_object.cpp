@@ -1,8 +1,8 @@
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
 
 #include "lug_object.h"
-#include "lug_memory.h"
 #include "lug_vm.h"
 
 namespace Luggage {
@@ -108,7 +108,7 @@ static ObjString* AllocateString(VMCore& vm, char* characters, std::size_t lengt
  * allocation for the passed-in string, since it cannot take
  * ownership of the original one.
  */
-ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t length) {
+ObjString* ObjString::FromSource(VMCore& vm, const char* original, std::size_t length) {
     std::uint32_t hash = HashString(original, length);
 
     // Check if the string is already in the vm's string
@@ -154,16 +154,16 @@ ObjString* ObjString::CopyFrom(VMCore& vm, const char* original, std::size_t len
  *      ^^^^^^^^^^^^^
  * part of a larger string!
  */
-ObjString* ObjString::CopyFrom(VMCore& vm, const char* literal) {
-    return CopyFrom(vm, literal, std::strlen(literal));
+ObjString* ObjString::FromLiteral(VMCore& vm, const char* literal) {
+    return FromSource(vm, literal, std::strlen(literal));
 }
 
 /**
  * Instead of copying the characters/allocating them to a new
- * block of memory on the heap like in ObjString::CopyFrom, this function
+ * block of memory on the heap like in ObjString::FromSource, this function
  * claims ownership of the string you give it.
  */
-ObjString* ObjString::TakeFrom(VMCore& vm, char* chars, std::size_t length) {
+ObjString* ObjString::FromAllocated(VMCore& vm, char* chars, std::size_t length) {
     std::uint32_t hash = HashString(chars, length);
     
     // Check if the string already exists in the 
@@ -175,6 +175,27 @@ ObjString* ObjString::TakeFrom(VMCore& vm, char* chars, std::size_t length) {
     }
 
     return AllocateString(vm, chars, length, hash);
+}
+
+
+/**
+ * Creates an ObjString with a format string.
+ */
+ObjString* ObjString::FromFormat(VMCore& vm, const char* format, ...) {
+    std::va_list args, copy;
+    va_start(args, format);
+    va_copy(copy, args);
+
+    int sizeNeeded = std::vsnprintf(nullptr, 0, format, args);
+    va_end(args);
+    ASSERT(sizeNeeded >= 0, "vsnprintf formatting error");
+
+    std::size_t size = static_cast<std::size_t>(sizeNeeded) + 1;
+    char* formatted = Memory::Allocate<char>(vm, size);
+    std::vsnprintf(formatted, size, format, copy);
+    va_end(copy);
+
+    return FromAllocated(vm, formatted, sizeNeeded);
 }
 
 
@@ -335,20 +356,20 @@ void ObjList::Set(int index, Value value) {
     items[index] = value;
 }
 
-// ObjDictionary methods ------------------------------------
+// ObjDict methods ------------------------------------
 
-ObjDictionary* ObjDictionary::New(VMCore& vm) {
-    ObjDictionary* newDictionary = AllocateObject<ObjDictionary>(vm);
+ObjDict* ObjDict::New(VMCore& vm) {
+    ObjDict* newDictionary = AllocateObject<ObjDict>(vm);
     return newDictionary;
 }
 
 
-ObjDictionary::~ObjDictionary() {
+ObjDict::~ObjDict() {
 
 }
 
 
-void ObjDictionary::Print() {
+void ObjDict::Print() {
     std::printf("{ ");
 
     std::size_t numPrinted = 0;
@@ -371,7 +392,7 @@ void ObjDictionary::Print() {
 }
 
 
-Value ObjDictionary::Get(Value key) const {
+Value ObjDict::Get(Value key) const {
     Value* value = dictionary.Get(key);
 
     if (value == nullptr) return Value::Nil();
@@ -379,12 +400,12 @@ Value ObjDictionary::Get(Value key) const {
 }
 
 
-void ObjDictionary::Set(Value key, Value value) {
+void ObjDict::Set(Value key, Value value) {
     dictionary.Set(key, value);
 }
 
 
-void ObjDictionary::Delete(Value key) {
+void ObjDict::Delete(Value key) {
     dictionary.Delete(key);
 }
 
@@ -412,7 +433,7 @@ Value ObjThing::Get(Value key) const {
     if (value != nullptr) return *value;
 
     Value* protoValue = attributes.Get("__proto__");
-    if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) return *value;
+    if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) return Value::Nil();
 
     ObjThing* proto = protoValue->AsObj<ObjThing>();
     return proto->Get(key);
@@ -420,7 +441,7 @@ Value ObjThing::Get(Value key) const {
 
 
 Value ObjThing::Get(const char* key) const {
-    return Get(ObjString::CopyFrom(vm, key, std::strlen(key)));
+    return Get(ObjString::FromLiteral(vm, key));
 }   
 
 
@@ -430,7 +451,7 @@ void ObjThing::Set(Value attribute, Value value) {
 
 
 void ObjThing::Set(const char* attribute, Value value) {
-    ObjString* attributeName = ObjString::CopyFrom(vm, attribute, std::strlen(attribute));
+    ObjString* attributeName = ObjString::FromLiteral(vm, attribute);
     Set(attributeName, value);
 }
 

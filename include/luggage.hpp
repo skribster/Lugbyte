@@ -19,7 +19,8 @@ enum class LibInclude : unsigned {
     MATH            = 1 << 1,   // 0010
     STRING          = 1 << 2,   // 0100...
     COLLECTION      = 1 << 3,
-    ALL             = BASE | MATH | STRING | COLLECTION
+    NUMBER          = 1 << 4,
+    ALL             = BASE | MATH | STRING | COLLECTION | NUMBER
 };
 
 

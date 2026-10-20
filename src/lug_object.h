@@ -4,6 +4,7 @@
 #include "lug_value.h"
 #include "lug_chunk.h"
 #include "lug_table.h"
+#include "lug_memory.h"
 
 namespace Luggage {
 
@@ -45,13 +46,15 @@ struct ObjString : Obj {
     void Print() override;
 
     // Factory methods to create a new ObjString on the heap
-    static ObjString* CopyFrom(VMCore& vm, const char* original, std::size_t length);
-    static ObjString* CopyFrom(VMCore& vm, const char* literal);
-    static ObjString* TakeFrom(VMCore& vm, char* chars, std::size_t length);
+    static ObjString* FromSource(VMCore& vm, const char* original, std::size_t length);
+    static ObjString* FromLiteral(VMCore& vm, const char* literal);
+    static ObjString* FromAllocated(VMCore& vm, char* chars, std::size_t length);
+    static ObjString* FromFormat(VMCore& vm, const char* format, ...);
 
     char* characters{ nullptr };
     std::size_t length{ 0 };
 };
+
 
 // ObjFunction -----------------
 
@@ -137,12 +140,12 @@ struct ObjList : Obj {
 
 // ObjDict -----------------
 
-struct ObjDictionary : Obj {
-    explicit ObjDictionary(VMCore& vm) 
+struct ObjDict : Obj {
+    explicit ObjDict(VMCore& vm) 
         : Obj(vm, ObjType::DICTIONARY), dictionary(vm) 
     {}
 
-    ~ObjDictionary() override;
+    ~ObjDict() override;
     void Print() override;
 
     Table dictionary;
@@ -151,7 +154,7 @@ struct ObjDictionary : Obj {
     void Set(Value key, Value value);
     void Delete(Value key);
 
-    static ObjDictionary* New(VMCore& vm);
+    static ObjDict* New(VMCore& vm);
 };
 
 // ObjThing -----------------

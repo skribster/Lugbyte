@@ -33,7 +33,7 @@ void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
     }
 
     for (const NativeEntry& entry : entries) {
-        ObjString* entryName = ObjString::CopyFrom(vm, entry.name, std::strlen(entry.name));
+        ObjString* entryName = ObjString::FromSource(vm, entry.name, std::strlen(entry.name));
         ObjNative* entryFunction = ObjNative::New(vm, entry.name, entry.function);
         vm.Push(entryName);
         vm.Push(entryFunction);
@@ -50,6 +50,7 @@ void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
 extern void OpenBase(VMCore& vm);
 extern void OpenMath(VMCore& vm);
 extern void OpenString(VMCore& vm);
+extern void OpenNumber(VMCore& vm);
 extern void OpenCollection(VMCore& vm);
 
 }

@@ -259,7 +259,7 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->type = type;
     
     if (type != FunctionType::SCRIPT) {
-        unit->function->name = ObjString::CopyFrom(vm, pendingName.start, pendingName.length);
+        unit->function->name = ObjString::FromSource(vm, pendingName.start, pendingName.length);
     }
 
     /*
@@ -371,7 +371,7 @@ std::uint8_t Compiler::MakeConstant(Value value) {
  * constant pool and returns the index of the constant.
  */
 std::uint8_t Compiler::IdentifierConstant(Token& identifier) {
-    ObjString* string = ObjString::CopyFrom(vm, identifier.start, identifier.length);
+    ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
     return MakeConstant(string);
 }
 
@@ -1358,7 +1358,7 @@ void Compiler::Number(bool canAssign) {
  * Emits a string into the bytecode stream.
  */
 void Compiler::String(bool canAssign) {
-    ObjString* stringObject = ObjString::CopyFrom(
+    ObjString* stringObject = ObjString::FromSource(
         vm,
         parser.previous.start + 1, // Start right after the first quote
         parser.previous.length - 2 // Account for the two quotes from beginning to end   

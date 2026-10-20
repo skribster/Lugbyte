@@ -14,6 +14,7 @@ target_sources(luggage_core
         src/lug_colllib.cpp
         src/lug_stdlib.cpp
         src/lug_strlib.cpp
+        src/lug_numlib.cpp
         
         src/lug_chunk.cpp
         src/lug_compiler.cpp

@@ -49,7 +49,7 @@ Value* Table::Get(Value key) const {
 
 
 Value* Table::Get(const char* key) const {
-    return Get(ObjString::CopyFrom(vm, key));
+    return Get(ObjString::FromLiteral(vm, key));
 }
 
 /**

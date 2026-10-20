@@ -7,10 +7,6 @@
 
 namespace Luggage::Lib {
 
-constexpr double PI = 3.14159265358979323846;
-constexpr double RADIANS_PER_DEGREE = PI / 180.0;
-constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
-
 // Library implementation functions -----------------------------
 
 static Value Abs(VMCore& vm, Value* args, std::size_t argCount) {
@@ -53,26 +49,6 @@ static Value Clamp(VMCore& vm, Value* args, std::size_t argCount) {
     if (value > hi) value = hi;
 
     return value;
-}
-
-
-static Value Radians(VMCore& vm, Value* args, std::size_t argCount) {
-    CheckArgc(vm, argCount, 1);
-    CheckType(vm, args[0], ValueType::NUMBER);
-
-    double degrees = args[0].AsNumber();
-
-    return degrees * RADIANS_PER_DEGREE;
-}
-
-
-static Value Degrees(VMCore& vm, Value* args, std::size_t argCount) {
-    CheckArgc(vm, argCount, 1);
-    CheckType(vm, args[0], ValueType::NUMBER);
-
-    double radians = args[0].AsNumber();
-
-    return radians / RADIANS_PER_DEGREE;
 }
 
 
@@ -169,8 +145,6 @@ static constexpr NativeEntry mathLib[] = {
     { "abs",        &Abs },
     { "sqrt",       &Sqrt },
     { "clamp",      &Clamp },
-    { "radians",    &Radians },
-    { "degrees",    &Degrees },
     { "sin",        &Sin },
     { "cos",        &Cos },
     { "tan",        &Tan },
@@ -185,11 +159,6 @@ static constexpr NativeEntry mathLib[] = {
 void OpenMath(VMCore& vm) { 
     ObjThing* library = NewLib(vm, "math");
     DefineLib(vm, library, mathLib); 
-
-    library->Set("pi", PI);
-    library->Set("tau", PI * 2);
-    library->Set("huge", HUGE_VAL);
-    library->Set("nan", NaN);
 }
 
 }

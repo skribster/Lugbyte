@@ -11,9 +11,16 @@ namespace Luggage::Lib {
 // Library implementation functions -----------------------------
 
 static Value Print(VMCore& vm, Value* args, std::size_t argCount) {
-    CheckArgc(vm, argCount, 1);
+    for (std::size_t i = 0; i < argCount; i++) {
+        if (i > 0) std::printf(" ");
 
-    Value::Print(args[0]);
+        Value value = args[i];
+        ObjString* stringed = vm.ToString(value);
+        ASSERT(stringed != nullptr, "Couldn't convert argument to string");
+
+        std::printf("%s", stringed->characters);
+    }
+
     std::printf("\n");
 
     return Value::Nil();
@@ -115,8 +122,16 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
 static Value Type(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
     
+    // Value::StringType() returns a literal.
     const char* stringType = args[0].StringType();
-    return ObjString::CopyFrom(vm, stringType, std::strlen(stringType));
+    return ObjString::FromLiteral(vm, stringType);
+}
+
+
+static Value NewThing(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 0);
+
+    return ObjThing::New(vm);
 }
 
 
@@ -125,13 +140,17 @@ static Value Type(VMCore& vm, Value* args, std::size_t argCount) {
 static constexpr NativeEntry baseLib[] = {
     { "print",      &Print },
     { "clock",      &Clock },
-    { "thing",      &Thing }, 
     { "error",      &Error },
     { "pcall",      &Pcall },
     { "type",       &Type },
 };
 
 // Function declaration of defined in lug_stdlib.h
-void OpenBase(VMCore& vm) { DefineLib(vm, nullptr, baseLib); }
+void OpenBase(VMCore& vm) { 
+    DefineLib(vm, nullptr, baseLib); 
+
+    ObjThing* thingProto = NewLib(vm, "thing");
+    thingProto->Set("__call__", ObjNative::New(vm, "__call__", &NewThing));
+}
 
 }

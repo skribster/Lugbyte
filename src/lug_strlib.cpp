@@ -5,6 +5,7 @@
 #include "lug_value.h"
 #include "lug_memory.h"
 
+
 namespace Luggage::Lib {
 
 static Value Upper(VMCore& vm, Value* args, std::size_t argCount) {
@@ -20,7 +21,7 @@ static Value Upper(VMCore& vm, Value* args, std::size_t argCount) {
 
     upperString[string->length] = '\0';
 
-    return ObjString::TakeFrom(vm, upperString, string->length);
+    return ObjString::FromAllocated(vm, upperString, string->length);
 }
 
 
@@ -37,7 +38,7 @@ static Value Lower(VMCore& vm, Value* args, std::size_t argCount) {
 
     upperString[string->length] = '\0';
 
-    return ObjString::TakeFrom(vm, upperString, string->length);
+    return ObjString::FromAllocated(vm, upperString, string->length);
 }
 
 
@@ -51,12 +52,20 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
+static Value __Call__(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+
+    return vm.ToString(args[0]);
+}
+
+
 // Library out ------------------------------
 
 static constexpr NativeEntry stringLib[] = {
     { "upper",      &Upper },
     { "lower",      &Lower },
     { "length",     &Length },
+    { "__call__",   &__Call__ }
 };
 
 // Function declaration of defined in lug_stdlib.h

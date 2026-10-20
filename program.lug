@@ -1,6 +1,1 @@
-box d <- { "a" <- 1, "b" <- 2, "c" <- 3 }
-
-foreach value at key in d do
-    print(key)
-    print(value)
-end
+3.hello()

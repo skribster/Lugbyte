@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include "luggage.hpp"
 
 #include "lug_common.h"
@@ -27,18 +28,19 @@ class VMCore {
     
     void DefineNative(const char* name, NativeFn function);
     void AddObject(Obj* obj);
-
+    
     void Push(Value value);
     Value& Peek(std::size_t distance) const;
     Value Pop();
-
+    
     void CallValue(Value value, std::uint8_t argCount);
     void Call(ObjClosure* closure, std::uint8_t argCount);
     ObjUpvalue* CaptureUpvalue(Value* local);
     void CloseUpvalues(Value* last);
-
+    
     void ResetStack();
-    ObjThing* GetProtoOf(Value value);
+    ObjThing* GetProtoOf(Value value) const;
+    ObjString* ToString(Value value);
 
     Table strings;
     Table globals;
@@ -101,7 +103,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     error.type = ErrorType::RUNTIME;
     error.message = errorMessage;
 
-    ObjString* messageValue = ObjString::CopyFrom(
+    ObjString* messageValue = ObjString::FromSource(
         *this, errorMessage.c_str(), 
         std::strlen(errorMessage.c_str())
     );
