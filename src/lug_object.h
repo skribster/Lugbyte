@@ -19,7 +19,7 @@ enum class ObjType {
     CLOSURE,
     NATIVE,
     LIST,
-    DICTIONARY,
+    DICT,
     THING,
 };
 
@@ -121,18 +121,20 @@ struct ObjNative : Obj {
 // ObjList -----------------
 
 struct ObjList : Obj {
-    explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST) {}
+    explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST), items(vm) {}
     ~ObjList() override;
     void Print() override;
 
     // An ObjList is just a wrapper for a dynamic array.
-    Value* items{ nullptr };
-    std::size_t itemCount{ 0 };
-    std::size_t itemCapacity{ 0 };
+    Vector<Value> items;
 
     void Append(Value value);
-    Value& Get(int index) const;
+    const Value& Get(int index) const;
     void Set(int index, Value value);
+
+    Vector<Value>::Iterator begin() { return items.begin(); }
+    Vector<Value>::Iterator end() { return items.end(); }
+
 
     static ObjList* New(VMCore& vm);
 };
@@ -142,7 +144,7 @@ struct ObjList : Obj {
 
 struct ObjDict : Obj {
     explicit ObjDict(VMCore& vm) 
-        : Obj(vm, ObjType::DICTIONARY), dictionary(vm) 
+        : Obj(vm, ObjType::DICT), dictionary(vm) 
     {}
 
     ~ObjDict() override;
@@ -150,7 +152,7 @@ struct ObjDict : Obj {
 
     Table dictionary;
 
-    Value Get(Value key) const;
+    Value Get(const Value& key) const;
     void Set(Value key, Value value);
     void Delete(Value key);
 

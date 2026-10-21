@@ -33,6 +33,29 @@ static T* AllocateObject(VMCore& vm) {
 }
 
 
+/**
+ * Hashes a string with the FNV-1a algorithm.
+ */
+static std::uint32_t HashString(const char* string, std::size_t length) {
+    std::uint32_t hash = 2166136261u;
+    for (int i = 0; i < length; i++) {
+        hash ^= static_cast<std::uint8_t>(string[i]);
+        hash *= 16777619;
+    }
+
+    return hash;
+}
+
+
+/**
+ * Hashes a pointer. This simply converts the memory address into
+ * a std::uint32_t.
+ */
+static std::uint32_t HashPointer(void* pointer) {
+    return reinterpret_cast<std::uintptr_t>(pointer) & UINT32_MAX;
+}
+
+
 // Obj methods ------------------------------------
 
 void Obj::Print() {
@@ -53,8 +76,8 @@ const char* Obj::StringType(ObjType type) {
         case ObjType::LIST:         
             return "list";
 
-        case ObjType::DICTIONARY:   
-            return "dictionary";
+        case ObjType::DICT:   
+            return "dict";
 
         case ObjType::UPVALUE:      
             return "upvalue";
@@ -74,17 +97,6 @@ const char* Obj::StringType(ObjType type) {
 
 
 // ObjString methods ------------------------------------
-
-static std::uint32_t HashString(const char* string, std::size_t length) {
-    std::uint32_t hash = 2166136261u;
-    for (int i = 0; i < length; i++) {
-        hash ^= static_cast<std::uint8_t>(string[i]);
-        hash *= 16777619;
-    }
-
-    return hash;
-}
-
 
 /**
  * Allocates an ObjString* onto the heap and returns its memory
@@ -216,6 +228,8 @@ ObjFunction* ObjFunction::New(VMCore& vm) {
     ObjFunction* function = AllocateObject<ObjFunction>(vm);
     function->arity = 0;
     function->name = nullptr;
+    // No need to compute hash for ObjFunction. ObjClosure is what will
+    // actually be used during runtime.
 
     return function;
 }
@@ -245,6 +259,7 @@ ObjUpvalue::~ObjUpvalue() {
 ObjUpvalue* ObjUpvalue::New(VMCore& vm, Value* slot) {
     ObjUpvalue* upvalue = AllocateObject<ObjUpvalue>(vm);
     upvalue->location = slot;
+    // No need to calculate hash for upvalues.
 
     return upvalue;
 }
@@ -281,6 +296,7 @@ ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
     newClosure->function = function;
     newClosure->upvalues = upvalues;
     newClosure->upvalueCount = function->upvalueCount;
+    newClosure->hash = HashPointer(newClosure);
 
     return newClosure;
 }
@@ -314,21 +330,22 @@ void ObjNative::Print() {
 // ObjList methods ------------------------------------
 
 ObjList::~ObjList() {
-    Memory::FreeArray<Value>(vm, items, itemCapacity);
+    
 }
 
 
 ObjList* ObjList::New(VMCore& vm) {
     ObjList* list = AllocateObject<ObjList>(vm);
+    list->hash = HashPointer(list);
     return list;
 }
 
 
 void ObjList::Print() {
     std::printf("[ ");
-    for (std::size_t i = 0; i < itemCount; i++) {
+    for (std::size_t i = 0; i < items.Count(); i++) {
         Value::Print(items[i]);
-        if (i != itemCount - 1) std::printf(", ");
+        if (i != items.Count() - 1) std::printf(", ");
     }
 
     std::printf(" ]");
@@ -336,18 +353,11 @@ void ObjList::Print() {
 
 
 void ObjList::Append(Value value) {
-    if (itemCount >= itemCapacity) {
-        std::size_t oldCapacity = itemCapacity;
-        itemCapacity = Memory::GrowCapacity(oldCapacity);
-        items = Memory::GrowArray<Value>(vm, items, oldCapacity, itemCapacity);
-    }
-
-    items[itemCount] = value;
-    itemCount++;
+    items.PushBack(value);
 }
 
 
-Value& ObjList::Get(int index) const {
+const Value& ObjList::Get(int index) const {
     return items[index];
 }
 
@@ -359,8 +369,9 @@ void ObjList::Set(int index, Value value) {
 // ObjDict methods ------------------------------------
 
 ObjDict* ObjDict::New(VMCore& vm) {
-    ObjDict* newDictionary = AllocateObject<ObjDict>(vm);
-    return newDictionary;
+    ObjDict* newDict = AllocateObject<ObjDict>(vm);
+    newDict->hash = HashPointer(newDict);
+    return newDict;
 }
 
 
@@ -392,7 +403,7 @@ void ObjDict::Print() {
 }
 
 
-Value ObjDict::Get(Value key) const {
+Value ObjDict::Get(const Value& key) const {
     Value* value = dictionary.Get(key);
 
     if (value == nullptr) return Value::Nil();
@@ -419,6 +430,7 @@ ObjThing::~ObjThing() {
 
 ObjThing* ObjThing::New(VMCore& vm) {
     ObjThing* newThing = AllocateObject<ObjThing>(vm);
+    newThing->hash = HashPointer(newThing);
     return newThing;
 }
 

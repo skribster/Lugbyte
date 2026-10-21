@@ -113,7 +113,7 @@ ObjString* VMCore::ToString(Value value) {
                 return ObjString::FromFormat(*this, "<list %p>", static_cast<void*>(list));
             }
 
-            case ObjType::DICTIONARY: {
+            case ObjType::DICT: {
                 ObjDict* dict = value.AsObj<ObjDict>();
                 return ObjString::FromFormat(*this, "<dict %p>", static_cast<void*>(dict));
             }
@@ -300,7 +300,7 @@ void VMCore::Call(ObjClosure* closure, std::uint8_t argCount) {
 
     CallFrame& frame = frames[frameCount++];
     frame.closure = closure;
-    frame.ip = closure->function->chunk.bytecode;
+    frame.ip = closure->function->chunk.bytecode.Data();
     frame.slots = stackTop - argCount - 1;
     
     Run(oldDepth);
@@ -350,7 +350,7 @@ void VMCore::Run(std::size_t stopDepth) {
     CallFrame* frame = &frames[frameCount - 1];
 
     #define READ_BYTE() (*frame->ip++)
-    #define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
+    #define READ_CONSTANT() (frame->closure->function->chunk.constants[READ_BYTE()])
     #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
     #define READ_SHORT() ((READ_BYTE() << 8) | READ_BYTE())
 
@@ -377,21 +377,21 @@ void VMCore::Run(std::size_t stopDepth) {
     // Dispatch table shenanigans -------------------
 
 #ifdef LUG_DEBUG_TRACE_EXECUTION
-    #define TRACE_EXECUTION()                                               \
-    do {                                                                    \
-        std::printf("          ");                                          \
-        for (Value* slot = stack; slot < stackTop; slot++) {                \
-            std::printf("[ ");                                              \
-            Value::Print(*slot);                                            \
-            std::printf(" ]");                                              \
-        }                                                                   \
-                                                                            \
-        std::printf("\n");                                                  \
-                                                                            \
-        Debug::DisassembleInstruction(                                      \
-            frame->closure->function->chunk,                                \
-            (int)(frame->ip - frame->closure->function->chunk.bytecode)     \
-        );                                                                  \
+    #define TRACE_EXECUTION()                                                       \
+    do {                                                                            \
+        std::printf("          ");                                                  \
+        for (Value* slot = stack; slot < stackTop; slot++) {                        \
+            std::printf("[ ");                                                      \
+            Value::Print(*slot);                                                    \
+            std::printf(" ]");                                                      \
+        }                                                                           \
+                                                                                    \
+        std::printf("\n");                                                          \
+                                                                                    \
+        Debug::DisassembleInstruction(                                              \
+            frame->closure->function->chunk,                                        \
+            (int)(frame->ip - frame->closure->function->chunk.bytecode.Data())      \
+        );                                                                          \
     } while (false)
 
 #else
@@ -697,12 +697,12 @@ void VMCore::Run(std::size_t stopDepth) {
                 if (!key.IsNumber()) key = 0;
                 value = list->Get(key.AsNumber());
                 
-                if (static_cast<std::size_t>(key.AsInteger()) >= list->itemCount) {
+                if (static_cast<std::size_t>(key.AsInteger()) >= list->items.Count()) {
                     frame->ip += jumpToEnd;
                 }
             } 
             
-            else if (iterable.IsObj(ObjType::DICTIONARY)) {
+            else if (iterable.IsObj(ObjType::DICT)) {
                 ObjDict* dict = iterable.AsObj<ObjDict>();
                 Value& probingIndex = Peek(3);
                 if (!probingIndex.IsNumber()) probingIndex = 0;
@@ -751,13 +751,13 @@ void VMCore::Run(std::size_t stopDepth) {
                 // Check if we exceeded the index count. If so, that means
                 // we're done with iterating through the list. Exit out of
                 // the loop.
-                if (key.AsInteger() < list->itemCount) {
+                if (key.AsInteger() < list->items.Count()) {
                     value = list->Get(key.AsInteger());
                     frame->ip -= jumpToStart;
                 }
             } 
 
-            else if (iterable.IsObj(ObjType::DICTIONARY)) {
+            else if (iterable.IsObj(ObjType::DICT)) {
                 ObjDict* dict = iterable.AsObj<ObjDict>();
                 Value& probingIndex = Peek(3);
                 ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
@@ -976,7 +976,7 @@ void VMCore::Run(std::size_t stopDepth) {
             // [ collection ][ index ]
             //                 ^^^^^ stackTop. You are here.
             Value& collection = Peek(1);
-            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICTIONARY)) {
+            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
                 RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
             }
             
@@ -986,7 +986,7 @@ void VMCore::Run(std::size_t stopDepth) {
                     
                     ObjList* list = collection.AsObj<ObjList>();
                     int index = Pop().AsInteger();
-                    index = ClampIndex(index, list->itemCount);
+                    index = ClampIndex(index, list->items.Count());
                     
                     Value value = list->Get(index);
                     Pop(); // Collection
@@ -995,7 +995,7 @@ void VMCore::Run(std::size_t stopDepth) {
                     break;
                 }
 
-                case ObjType::DICTIONARY: {
+                case ObjType::DICT: {
                     ObjDict* dict = collection.AsObj<ObjDict>();
 
                     Value key = Peek(0);
@@ -1018,7 +1018,7 @@ void VMCore::Run(std::size_t stopDepth) {
             // [ collection ][ index ][ newValue ]
             //                                    ^^^^^^ stackTop. You are here.
             Value& collection = Peek(2);
-            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICTIONARY)) {
+            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
                 RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
             }
 
@@ -1032,13 +1032,13 @@ void VMCore::Run(std::size_t stopDepth) {
                     ObjList* list = collection.AsObj<ObjList>();
 
                     int index = Peek(1).AsInteger();
-                    index = ClampIndex(index, list->itemCount);
+                    index = ClampIndex(index, list->items.Count());
                     list->Set(index, newValue); 
 
                     break;
                 }
 
-                case ObjType::DICTIONARY: {
+                case ObjType::DICT: {
                     ObjDict* dictionary = collection.AsObj<ObjDict>();
 
                     // Dictionaries have Lua semantics, where setting a key to nil

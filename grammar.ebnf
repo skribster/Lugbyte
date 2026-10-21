@@ -47,8 +47,8 @@ dictionary          ::= '{' keyvalue_list? '}'
 
 /* Utility rules */
 arguments           ::= expression ( ',' expression )*
-parameters          ::= IDENTIFIER ( "," IDENTIFIER )*
+parameters          ::= IDENTIFIER ( ',' IDENTIFIER )*
 
 expression_list     ::= expression (',' expression)*
 keyvalue_list       ::= keyvalue_pair (',' keyvalue_pair)*
-keyvalue_pair       ::= expression "<-" expression
+keyvalue_pair       ::= (primary '<-' expression) | ('[' expression ']' '<-' expression)

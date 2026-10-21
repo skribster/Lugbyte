@@ -26,20 +26,32 @@ static Value Clone(VMCore& vm, Value* args, std::size_t argCount) {
 
     ObjList* list = args[0].AsObj<ObjList>();
 
-    void* allocatedCloneMemory = Memory::Allocate<ObjList>(vm, 1);
-    ObjList* clone = new (allocatedCloneMemory) ObjList(vm);
-    vm.Push(clone); // We don't want a GC to collect this.
-
-    // This creates a shallow copy.
-    if (list->itemCount > 0) {
-        clone->items = Memory::Allocate<Value>(vm, list->itemCapacity);
-        clone->itemCapacity = list->itemCapacity;
-        std::memcpy(clone->items, list->items, list->itemCount * sizeof(Value));
-        clone->itemCount = list->itemCount;
+    /*
+        This creates a shallow copy.
+    */
+    ObjList* clone = ObjList::New(vm);
+    for (std::size_t i = 0; i < list->items.Count(); i++) {
+        clone->Append(list->items[i]);
     }
 
-    vm.Pop();
     return clone;
+}
+
+
+static Value Sum(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+    CheckType(vm, args[0], ObjType::LIST);
+
+    ObjList* list = args[0].AsObj<ObjList>();
+
+    int sum = 0;
+    for (auto& item : *list) {
+        if (!item.IsNumber()) return Value::Nil();
+
+        sum += item.AsNumber();
+    }
+
+    return sum;
 }
 
 
@@ -48,6 +60,7 @@ static Value Clone(VMCore& vm, Value* args, std::size_t argCount) {
 static constexpr NativeEntry listLib[] = {
     { "append",     &Append },
     { "clone",      &Clone },
+    { "sum",        &Sum },
 };
 
 // Function declaration of defined in lug_stdlib.h

@@ -13,11 +13,11 @@ struct Entry {
     Value value{ Value::Nil() };
 
     /**
-     * Returns whether an entry is 'occupied'. An entry is occupied when its key
-     * holds an actual value. In this case, when the key is not a TOMBSTONE and 
-     * it's not nil.
+     * Returns whether an entry is 'empty'. An entry is empty when the key 
+     * is not a TOMBSTONE and it's not nil. Any other case, we can consider
+     * it as occupied.
      */
-    inline bool IsEmpty() { return key.IsTombstone() || key.IsNil(); }
+    inline bool IsEmpty() const { return key.IsTombstone() || key.IsNil(); }    
 };
 
 
@@ -27,7 +27,7 @@ public:
     ~Table();
 
     bool Set(Value key, Value value);
-    Value* Get(Value key) const;
+    Value* Get(const Value& key) const;
     Value* Get(const char* keyName) const;
     bool Delete(Value key);
     
@@ -38,6 +38,10 @@ public:
     ) const;
 
     VMCore& vm;
+
+    // Do not replace with Luggage::Vector because this isn't
+    // a dynamic array. It's a hashmap. I'm stupid and I tried doing
+    // this and it did not work because of the logic in AdjustCapacity().
     std::size_t count{ 0 };
     std::size_t capacity{ 0 };
     Entry* entries{ nullptr };
@@ -45,7 +49,7 @@ public:
     static constexpr double MAX_LOAD{ 0.75 };
 
 private:
-    Entry* FindEntry(Value& key) const;
+    Entry* FindEntry(const Value& key) const;
     void AdjustCapacity(std::size_t newCapacity);
 };
 

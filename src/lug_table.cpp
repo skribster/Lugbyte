@@ -38,7 +38,7 @@ bool Table::Set(Value key, Value value) {
 }
 
 
-Value* Table::Get(Value key) const {
+Value* Table::Get(const Value& key) const {
     if (count == 0) return nullptr;
 
     Entry* entry = FindEntry(key);
@@ -113,7 +113,7 @@ ObjString* Table::FindString(const char* chars, std::size_t length, std::uint32_
  * Takes an Obj key and finds out which bucket the
  * entry should belong in.
  */
-Entry* Table::FindEntry(Value& key) const {
+Entry* Table::FindEntry(const Value& key) const {
     std::uint32_t index = key.GetHash() % capacity;
     
     /*

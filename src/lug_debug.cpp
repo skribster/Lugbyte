@@ -19,7 +19,7 @@ static std::size_t constantInstruction(const char* name, Chunk& chunk, std::size
     std::uint8_t constantIndex = chunk.bytecode[offset + 1];
     std::printf("%-20s %4d '", name, constantIndex);
 
-    Value::Print(chunk.constants.values[constantIndex]);
+    Value::Print(chunk.constants[constantIndex]);
 
     std::printf("'\n");
 
@@ -245,10 +245,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             
             std::uint8_t constant = chunk.bytecode[offset++];
             std::printf("%-20s %4d ", "OP_CLOSURE", constant);
-            Value::Print(chunk.constants.values[constant]);
+            Value::Print(chunk.constants[constant]);
             std::printf("\n");
 
-            ObjFunction* function = chunk.constants.values[constant].AsObj<ObjFunction>();
+            ObjFunction* function = chunk.constants[constant].AsObj<ObjFunction>();
             for (int j = 0; j < function->upvalueCount; j++) {
                 int isLocal = chunk.bytecode[offset++];
                 int index = chunk.bytecode[offset++];
@@ -320,7 +320,7 @@ void DisassembleChunk(Chunk& chunk, const char* name) {
      * We're going to loop through the bytecode stream and print
      * each instruction.
      */
-    for (std::size_t offset = 0; offset < chunk.byteCount;) {
+    for (std::size_t offset = 0; offset < chunk.bytecode.Count();) {
         offset = DisassembleInstruction(chunk, offset);
     }
 }

@@ -84,7 +84,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     for (int i = frameCount - 1; i >= 0; i--) {
         CallFrame& frame = frames[i];
         ObjFunction* function = frame.closure->function;
-        std::size_t instruction = frame.ip - function->chunk.bytecode - 1;
+        std::size_t instruction = frame.ip - function->chunk.bytecode.Data() - 1;
         std::size_t line = function->chunk.GetLine(instruction);
 
         errorMessage += "[line ";

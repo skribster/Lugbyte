@@ -133,24 +133,4 @@ std::uint32_t Value::GetHash() const {
     }
 }
 
-
-// Value Array Methods ------------------------------
-
-ValueArray::~ValueArray() {
-    Memory::FreeArray<Value>(vm, values, valueCapacity);
-}
-
-
-void ValueArray::Write(Value value) {
-    if (valueCount >= valueCapacity) {
-        std::size_t oldCapacity = valueCapacity;
-        valueCapacity = Memory::GrowCapacity(oldCapacity);
-
-        values = Memory::GrowArray<Value>(vm, values, oldCapacity, valueCapacity);
-    }
-
-    values[valueCount] = value;
-    valueCount++;
-}
-
 }

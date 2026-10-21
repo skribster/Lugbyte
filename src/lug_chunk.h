@@ -2,6 +2,7 @@
 
 #include "lug_common.h"
 #include "lug_value.h"
+#include "lug_vector.h"
 
 // Forward declaration for VMCore since
 // we need it for memory operations
@@ -17,7 +18,9 @@ struct LineStart {
 
 struct Chunk {
 public: 
-    explicit Chunk(VMCore& vm) : vm(vm), constants(vm) {};
+    explicit Chunk(VMCore& vm) 
+        : vm(vm), constants(vm), bytecode(vm), lines(vm) 
+    {};
     ~Chunk();
 
     void Write(std::uint8_t byte, std::size_t line);
@@ -26,17 +29,10 @@ public:
     std::size_t AddConstant(Value value);
     std::size_t GetLine(std::size_t byteOffset);
 
-    // Bytecode array
-    std::uint8_t* bytecode{ nullptr };
-    std::size_t byteCount{ 0 };
-    std::size_t byteCapacity{ 0 };
+    Vector<std::uint8_t> bytecode;
+    Vector<LineStart> lines;
 
-    // Line array
-    LineStart* lines{ nullptr };
-    std::size_t lineCount{ 0 };
-    std::size_t lineCapacity{ 0 };
-
-    ValueArray constants;
+    Vector<Value> constants;
 
 private:
     VMCore& vm;

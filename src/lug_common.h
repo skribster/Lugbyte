@@ -43,14 +43,14 @@
         } while (false)
     
 #else
-    #define ASSERT(condition, message) do { } while (false)
+    #define ASSERT(condition, message) /* empty */
     
     #if defined(_MSC_VER) && !defined(__clang__) // MSVC
         #define UNREACHABLE() __assume(false);
     #elif defined(__GNUC__) || defined(__clang__) // GCC, Clang
         #define UNREACHABLE() __builtin_unreachable();
     #else
-        #define UNREACHABLE() do { } while (false)
+        #define UNREACHABLE() /* empty */
     #endif
 
 #endif

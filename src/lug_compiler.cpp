@@ -449,7 +449,7 @@ std::size_t Compiler::EmitJump(OpCode::Type instruction) {
      *  ^^^^^^^^^
      * Subtract 2 to be here.
      */
-    return CurrentChunk()->byteCount - 2;
+    return CurrentChunk()->bytecode.Count() - 2;
 }
 
 
@@ -479,7 +479,7 @@ void Compiler::PatchJump(std::size_t instructionOffset) {
      * the VM consumes the short with READ_SHORT(), and its IP will be pointing to the 
      * byte just past the operand. So we have to adjust for it accordingly.
      */
-    std::size_t numBytesToJump = CurrentChunk()->byteCount - instructionOffset - 2;
+    std::size_t numBytesToJump = CurrentChunk()->bytecode.Count() - instructionOffset - 2;
     if (numBytesToJump > UINT16_MAX) {
         parser.Error("Too much code to jump over.");
     }
@@ -498,7 +498,7 @@ void Compiler::EmitLoop(OpCode::Type loopInstruction, std::size_t loopStart) {
     // Get the amount of bytes between the current byte and the loop start.
     // the +2 is to account for OP_LOOP's operands, which we also need
     // to jump over.
-    std::size_t loopOffset = CurrentChunk()->byteCount - loopStart + 2;
+    std::size_t loopOffset = CurrentChunk()->bytecode.Count() - loopStart + 2;
     if (loopOffset > UINT16_MAX) parser.Error("Loop body too large.");
 
     EmitByte((loopOffset >> 8) & 0xff);
@@ -509,7 +509,7 @@ void Compiler::EmitLoop(OpCode::Type loopInstruction, std::size_t loopStart) {
 
 void Compiler::StartLoop(LoopContext& loop) {
     loop.outerLoop = currentLoop;
-    loop.start = CurrentChunk()->byteCount;
+    loop.start = CurrentChunk()->bytecode.Count();
 
     /*
         Be careful! loop.scopeDepth is the depth of the scope
@@ -573,7 +573,7 @@ void Compiler::PatchPlaceholders(std::size_t firstPlaceholder, OpCode::Type inst
     if (firstPlaceholder == UINT16_MAX) return;
     
     Chunk& chunk = *CurrentChunk();
-    std::size_t to = CurrentChunk()->byteCount - 1;
+    std::size_t to = CurrentChunk()->bytecode.Count() - 1;
     std::size_t currentPlaceholder = firstPlaceholder;
 
 
@@ -653,7 +653,7 @@ void Compiler::AddPlaceholder(std::size_t* placeholderListHead) {
 
     // The index of the placeholder in the chunk's bytecode.
     // We subtract 1 because indices start at 0, not 1.
-    std::size_t newBreak = CurrentChunk()->byteCount - 1;
+    std::size_t newBreak = CurrentChunk()->bytecode.Count() - 1;
 
     // If this is the first 'break' in the break statement linked list...
     if (*placeholderListHead == UINT16_MAX) {
@@ -663,7 +663,7 @@ void Compiler::AddPlaceholder(std::size_t* placeholderListHead) {
         // We will have to get the number of bytes BACKWARDS the last
         // break OP_JUMP statement is in the bytecode stream.
         std::size_t lastBreak = *placeholderListHead;
-        EmitShort(CurrentChunk()->byteCount - lastBreak - 1);
+        EmitShort(CurrentChunk()->bytecode.Count() - lastBreak - 1);
     }
 
     *placeholderListHead = newBreak;
@@ -1447,9 +1447,19 @@ void Compiler::Dictionary(bool canAssign) {
     
     if (!parser.Check(TokenType::RIGHT_BRACE)) {
         do {
-            // Parse only primary for dictionary literals. Having things like function calls
-            // as keys can be considered clutter.
-            ParsePrecedence(Precedence::PRIMARY);
+            if (parser.Match(TokenType::LEFT_BRACKET)) {
+                // Luggage allows [expr] <- value for more permissive keys.
+                // The main reason we don't allow for a more range of expressions in
+                // the default case (no brackets) is because of parsing troubles. Having
+                // something like a <- 4 <- "hello" confuses the parser because we
+                // don't know which '<-' denotes the key-value separation.
+                Expression();
+                parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after key.");
+            } else {
+                // Otherwise, if we don't have a square bracket we can just parse primary.
+                ParsePrecedence(Precedence::PRIMARY);
+            }
+
             parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after key.");
             Expression();
             EmitByte(OpCode::DEFINE_ENTRY);
