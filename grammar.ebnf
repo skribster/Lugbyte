@@ -28,7 +28,7 @@ equality            ::= comparison ( ('!=' | '=') comparison )*
 comparison          ::= term ( ('>' | '>=' | '<' | '<=') term )*
 term                ::= factor ( ('-' | '+') factor )*
 factor              ::= unary ( ('*' | '/') unary )*
-unary               ::= ('not' | '-') unary | primary
+unary               ::= ('share' | 'not' | '-') unary | primary
 /*                               indexing list/dict    getting field    calling a function */
 postfix             ::= primary ( "[" expression "]" | "." IDENTIFIER | "(" arguments? ")" )*
 primary             ::= 'null' 
@@ -40,14 +40,16 @@ primary             ::= 'null'
                       | function
                       | list
                       | dictionary
+                      | thing
 
 function            ::= 'function' '(' parameters? ')' block 'end'
 list                ::= '[' expression_list? ']'
 dictionary          ::= '{' keyvalue_list? '}'
+thing               ::= 'thing' ( 'of' expression )?
 
 /* Utility rules */
 arguments           ::= expression ( ',' expression )*
-parameters          ::= IDENTIFIER ( ',' IDENTIFIER )*
+parameters          ::= 'shared'? IDENTIFIER ( ',' 'shared'? IDENTIFIER )*
 
 expression_list     ::= expression (',' expression)*
 keyvalue_list       ::= keyvalue_pair (',' keyvalue_pair)*

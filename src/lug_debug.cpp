@@ -56,10 +56,34 @@ static int patchInstruction(const char* name, Chunk& chunk, int offset) {
  * Helper for displaying a 'byte' instruction
  */
 static std::size_t byteInstruction(const char* name, Chunk& chunk, std::size_t offset) {
-    std::uint16_t slot = chunk.bytecode[offset + 1];
+    std::uint8_t slot = chunk.bytecode[offset + 1];
     std::printf("%-20s %4d\n", name, slot);
     return offset + 2;
 }
+
+
+static std::size_t sharedInstruction(const char* name, Chunk& chunk, std::size_t offset) {
+    std::uint8_t slot = chunk.bytecode[offset + 1];
+    std::uint16_t sharedArgs = chunk.bytecode[offset + 2];
+    
+    std::printf("%-20s %4d '", name, slot); 
+
+    // Print sharedArgs as binary representation
+    for (int i = 7; i >= 0; i--) {
+        // Shift bit to the 1st position and mask it
+        std::printf("%d", (sharedArgs >> i) & 1);
+        
+        // Add a space every 4 bits for easy readability
+        if (i % 4 == 0 && i != 0) {
+            printf(" ");
+        }
+    }
+
+    std::printf("'\n");
+
+    return offset + 3;
+}
+
 
 // Debug methods -------------------------
 
@@ -118,6 +142,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
 
         case OpCode::DIVIDE: {
             return simpleInstruction("OP_DIVIDE", offset);
+        }
+        
+        case OpCode::MODULO: {
+            return simpleInstruction("OP_MODULO", offset);
         }
         
         case OpCode::EQUAL: {
@@ -200,6 +228,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_DUPLICATE", offset);
         }
 
+        case OpCode::COPY: {
+            return simpleInstruction("OP_COPY", offset);
+        }
+
         case OpCode::DEFINE_GLOBAL: {
             return constantInstruction("OP_DEFINE_GLOBAL", chunk, offset);
         }
@@ -236,6 +268,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return byteInstruction("OP_CALL", chunk, offset);
         }
 
+        case OpCode::CALL_SHARED: {
+            return sharedInstruction("OP_CALL_SHARED", chunk, offset);
+        }
+
         case OpCode::SELF: {
             return constantInstruction("OP_SELF", chunk, offset);
         }
@@ -268,8 +304,12 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_LIST", offset);
         }
 
-        case OpCode::DICTIONARY: {
-            return simpleInstruction("OP_DICTIONARY", offset);
+        case OpCode::DICT: {
+            return simpleInstruction("OP_DICT", offset);
+        }
+
+        case OpCode::THING: {
+            return simpleInstruction("OP_THING", offset);
         }
 
         case OpCode::APPEND: {
@@ -289,11 +329,11 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         }
 
         case OpCode::GET_ATTRIBUTE: {
-            return simpleInstruction("OP_GET_ATTRIBUTE", offset);
+            return constantInstruction("OP_GET_ATTRIBUTE", chunk, offset);
         }
 
         case OpCode::SET_ATTRIBUTE: {
-            return simpleInstruction("OP_SET_ATTRIBUTE", offset);
+            return constantInstruction("OP_SET_ATTRIBUTE", chunk, offset);
         }
 
         case OpCode::PRINT: {

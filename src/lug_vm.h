@@ -33,14 +33,15 @@ class VMCore {
     Value& Peek(std::size_t distance) const;
     Value Pop();
     
-    void CallValue(Value value, std::uint8_t argCount);
-    void Call(ObjClosure* closure, std::uint8_t argCount);
+    void CallValue(Value value, std::uint8_t argCount, std::uint8_t shared);
+    void Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared = 0);
     ObjUpvalue* CaptureUpvalue(Value* local);
     void CloseUpvalues(Value* last);
     
     void ResetStack();
     ObjThing* GetProtoOf(Value value) const;
     ObjString* ToString(Value value);
+    Value Deepcopy(const Value& value);
 
     Table strings;
     Table globals;
@@ -59,13 +60,36 @@ class VMCore {
     
 private:
     void Concatenate();
-    int ClampIndex(int index, int numItems);
+    inline int ClampIndex(int index, int numItems);
     void Run(std::size_t stopDepth);
     
     LugError lastError;
 
     friend class VM;
 };
+
+
+/**
+ * Clamps a list index given the list's number of items.
+ * If it's negative, it will wrap around to the end of the list.
+ * If the index is larger than the number of items, we'll throw
+ * an error.
+ * Otherwise, just keep the list index.
+ */
+inline int VMCore::ClampIndex(int index, int numItems) {
+    // This handles the wrap-around case for negative numbers.
+    if (index < 0) {
+        return ((index % numItems) + numItems) % numItems; 
+    }
+
+    // -1 because itemCount starts at 1, while indices start at 0
+    if (index > numItems - 1) {
+        RuntimeError("Index '%d' out of range.", index);
+    }
+
+    return index;
+}
+
 
 template<typename... Args>
 void VMCore::RuntimeError(const char* message, Args... args) {

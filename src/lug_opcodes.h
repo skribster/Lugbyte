@@ -40,6 +40,7 @@
                                     \
     OPCODE(POP)                     \
     OPCODE(DUPLICATE)               \
+    OPCODE(COPY)                    \
                                     \
     OPCODE(DEFINE_GLOBAL)           \
     OPCODE(GET_GLOBAL)              \
@@ -51,11 +52,13 @@
     OPCODE(CLOSE_UPVALUE)           \
                                     \
     OPCODE(CALL)                    \
+    OPCODE(CALL_SHARED)             \
     OPCODE(SELF)                    \
     OPCODE(CLOSURE)                 \
                                     \
     OPCODE(LIST)                    \
-    OPCODE(DICTIONARY)              \
+    OPCODE(DICT)                    \
+    OPCODE(THING)                   \
     OPCODE(APPEND)                  \
     OPCODE(DEFINE_ENTRY)            \
     OPCODE(GET_INDEX)               \

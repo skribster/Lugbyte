@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <unordered_map>
 
 #include "lug_vm.h"
 #include "lug_opcodes.h"
@@ -26,6 +27,81 @@ static bool IsFalsy(Value value) {
 static bool IsTruthy(Value value) {
     return !IsFalsy(value);
 }
+
+
+static int CountTrailingZeroes(std::uint8_t byte) {
+    if (byte == 0) return 8;
+
+    int index = 0;
+    while (((byte >> index) & 1) == 0) index++;
+
+    return index;
+}
+
+
+static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Obj*, Obj*>& memo) {
+    if (!value.IsObj()) return value;
+
+    Obj* obj = value.AsObj();
+
+    // Already copied (or currently being copied)? Reuse it.
+    if (auto it = memo.find(obj); it != memo.end()) {
+        return it->second;
+    }
+
+    switch (obj->type) {
+        case ObjType::FUNCTION:
+        case ObjType::CLOSURE:
+        case ObjType::NATIVE:
+            return value;
+
+        // Strings are immutable.
+        case ObjType::STRING: {
+            return value;
+        }
+
+        case ObjType::LIST: {
+            ObjList* original = value.AsObj<ObjList>();
+            ObjList* copy = ObjList::New(vm);
+            memo[obj] = copy;   // register BEFORE recursing
+
+            for (auto& item : *original) {
+                copy->Append(DeepcopyValue(vm, item, memo));
+            }
+            return copy;
+        }
+
+        case ObjType::DICT: {
+            ObjDict* original = value.AsObj<ObjDict>();
+            ObjDict* copy = ObjDict::New(vm);
+            memo[obj] = copy;
+
+            for (auto& entry : *original) {
+                Value k = DeepcopyValue(vm, entry.key, memo);
+                Value v = DeepcopyValue(vm, entry.value, memo);
+                copy->Set(k, v);   // was original->Set
+            }
+            return copy;
+        }
+
+        case ObjType::THING: {
+            ObjThing* original = value.AsObj<ObjThing>();
+            ObjThing* copy = ObjThing::New(vm);
+            memo[obj] = copy;
+
+            for (auto& attribute : *original) {
+                Value name = DeepcopyValue(vm, attribute.key, memo);
+                Value v = DeepcopyValue(vm, attribute.value, memo);
+                copy->Set(name, v);   // was original->Set
+            }
+            return copy;
+        }
+
+        default:
+            return value;
+    }
+}
+
 
 // VMCore methods -----------------------------------
 
@@ -127,7 +203,8 @@ ObjString* VMCore::ToString(Value value) {
                     Push(stringDunder);
                     Push(t);
 
-                    CallValue(stringDunder, 1);
+                    // We will 'share' the thing.
+                    CallValue(stringDunder, 1, 0b1);
                     Value result = Pop();
                     if (!result.IsObj(ObjType::STRING)) {
                         RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
@@ -162,26 +239,13 @@ ObjString* VMCore::ToString(Value value) {
 }
 
 
-
 /**
- * Clamps a list index given the list's number of items.
- * If it's negative, it will wrap around to the end of the list.
- * If the index is larger than the number of items, we'll throw
- * an error.
- * Otherwise, just keep the list index.
+ * Returns a duplicate of a value that recursively copies
+ * all underlying and nested elements.
  */
-int VMCore::ClampIndex(int index, int itemCount) {
-    // This handles the wrap-around case for negative numbers.
-    if (index < 0) {
-        return ((index % itemCount) + itemCount) % itemCount; 
-    }
-
-    // -1 because itemCount starts at 1, while indices start at 0
-    if (index > itemCount - 1) {
-        RuntimeError("Index '%d' out of range.", index);
-    }
-
-    return index;
+Value VMCore::Deepcopy(const Value& value) {
+    std::unordered_map<Obj*, Obj*> memo;
+    return DeepcopyValue(*this, value, memo);
 }
 
 
@@ -234,11 +298,11 @@ void VMCore::AddObject(Obj* object) {
 /**
  * This function will attempt to call any value of any type.
  */
-void VMCore::CallValue(Value value, std::uint8_t argCount) {
+void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) {
     if (value.IsObj()) {
         switch (value.AsObj()->type) {
             case ObjType::CLOSURE: {
-                Call(value.AsObj<ObjClosure>(), argCount);
+                Call(value.AsObj<ObjClosure>(), argCount, shared);
                 return;
             }
             
@@ -260,14 +324,14 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
                 ObjThing* thing = value.AsObj<ObjThing>();
                 Value callDunder = thing->Get("__call__");
                 
-                CallValue(callDunder, argCount);
+                CallValue(callDunder, argCount, shared);
                 return;
             }
 
             default: {
                 ObjThing* valueProto = GetProtoOf(value);
                 if (valueProto != nullptr) {
-                    CallValue(valueProto, argCount);
+                    CallValue(valueProto, argCount, shared);
                     return;
                 }
             }
@@ -282,9 +346,17 @@ void VMCore::CallValue(Value value, std::uint8_t argCount) {
  * This function will call a given callee and run the interpreter
  * until the function finishes.
  */
-void VMCore::Call(ObjClosure* closure, std::uint8_t argCount) {
-    if (argCount != closure->function->arity) {
-        RuntimeError("Expected %d arguments but got %d.", closure->function->arity, argCount);
+void VMCore::Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
+    ObjFunction::Arguments parameters = closure->function->parameters;
+    if (argCount != parameters.arity) {
+        RuntimeError("Expected %d arguments but got %d.", parameters.arity, argCount);
+    }
+
+    // If the 'shared' parameters don't align...
+    std::uint8_t masked = parameters.shared & ~shared;
+    if ((masked) != 0) {
+        int index = CountTrailingZeroes(masked);
+        RuntimeError("Expected a shared argument at argument %d", index + 1);
     }
 
     if (frameCount == FRAMES_MAX) {
@@ -798,6 +870,15 @@ void VMCore::Run(std::size_t stopDepth) {
             DISPATCH();
         }
 
+        CASE(COPY): {
+            Value value = Peek(0);
+            Value copy = Deepcopy(value);
+            Pop();
+            Push(copy);
+
+            DISPATCH();
+        }
+
         CASE(DEFINE_GLOBAL): {
             /*
                 The operand of DEFINE_GLOBAL is a
@@ -873,15 +954,25 @@ void VMCore::Run(std::size_t stopDepth) {
 
             DISPATCH();
         }
-        
+
         CASE(CALL): {
             std::uint8_t argCount = READ_BYTE();
             
             // Attempt to call the callee, whether it is of any value type.
-            CallValue(Peek(argCount), argCount);
+            CallValue(Peek(argCount), argCount, 0b0);
             
             // After we call the value, there will be a new call frame on the 
             // frame stack. Let's update our pointer to match that.
+            frame = &frames[frameCount - 1];
+            
+            DISPATCH();
+        }
+        
+        CASE(CALL_SHARED): {
+            std::uint8_t argCount = READ_BYTE();
+            std::uint8_t shared = READ_BYTE();
+
+            CallValue(Peek(argCount), argCount, shared);
             frame = &frames[frameCount - 1];
             
             DISPATCH();
@@ -944,9 +1035,16 @@ void VMCore::Run(std::size_t stopDepth) {
             DISPATCH();
         }
 
-        CASE(DICTIONARY): {
-            ObjDict* newDictionary = ObjDict::New(*this);
-            Push(newDictionary);
+        CASE(DICT): {
+            ObjDict* newDict = ObjDict::New(*this);
+            Push(newDict);
+
+            DISPATCH();
+        }
+
+        CASE(THING): {
+            ObjThing* newThing = ObjThing::New(*this);
+            Push(newThing);
 
             DISPATCH();
         }

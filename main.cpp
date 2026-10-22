@@ -27,7 +27,7 @@ static void Repl(Luggage::VM& vm) {
 static std::string ReadFile(std::string_view path) {
     std::ifstream file(path.data());
     if (!file.is_open()) {
-        std::cerr << "Could not open file: %s\n" << path;
+        std::cerr << "Could not open file: " << path << std::endl;
         exit(74);
     }
 

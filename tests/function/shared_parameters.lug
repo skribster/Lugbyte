@@ -1,0 +1,15 @@
+box updateShared <- function(shared values)
+    values[0] <- 99
+end
+
+box sharedValues <- [10]
+updateShared(share sharedValues)
+print(sharedValues[0])
+
+box updateCopy <- function(values)
+    values[0] <- 99
+end
+
+box copiedValues <- [10]
+updateCopy(copiedValues)
+print(copiedValues[0])

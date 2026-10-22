@@ -1,4 +1,4 @@
-box person <- thing()
+box person <- thing
 person.name <- "John"
 person.age <- 5
 

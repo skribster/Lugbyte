@@ -20,9 +20,55 @@ struct Entry {
     inline bool IsEmpty() const { return key.IsTombstone() || key.IsNil(); }    
 };
 
+class TableIterator {
+public:
+    TableIterator(Entry* current, Entry* end)
+        : current(current), end(end) {
+        SkipEmpty(); // land on a live entry (or end)
+    }
+
+    // Prefix ++
+    TableIterator& operator++() {
+        ++current;
+        SkipEmpty();
+        return *this;
+    }
+
+    // Postfix ++
+    TableIterator operator++(int) {
+        TableIterator previous = *this;
+        ++(*this);
+        return previous;
+    }
+
+    Entry& operator*() const { return *current; }
+    Entry* operator->() const { return current; }
+
+    bool operator==(const TableIterator& other) const {
+        return current == other.current;
+    }
+    bool operator!=(const TableIterator& other) const {
+        return current != other.current;
+    }
+
+private:
+    // Advance until we hit a live entry or the end.
+    // Does nothing if already on a live entry.
+    void SkipEmpty() {
+        while (current != end && current->IsEmpty()) {
+            ++current;
+        }
+    }
+
+    Entry* current;
+    Entry* end;
+};
+
 
 struct Table {
 public:
+    using Iterator = TableIterator;
+
     explicit Table(VMCore& vm) : vm(vm) {}
     ~Table();
 
@@ -36,6 +82,20 @@ public:
         std::size_t length, 
         std::uint32_t hash
     ) const;
+
+
+    // Iterator methods ----------
+
+    Iterator begin() {
+        return Iterator(entries, entries + capacity);
+    }
+
+    Iterator end() {
+        return Iterator(entries, entries + capacity);
+    }
+
+
+    // Member variables ----------
 
     VMCore& vm;
 

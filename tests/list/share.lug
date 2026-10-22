@@ -1,0 +1,9 @@
+box numberList <- [1, 2, 3, 4, 5]
+
+box numberListCopy <- numberList
+numberListCopy:append(6)
+print(numberList:sum())
+
+box numberListRef <- share numberList
+numberListRef:append(6)
+print(numberList:sum())

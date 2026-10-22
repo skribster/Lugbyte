@@ -1,0 +1,35 @@
+box Dog <- thing // Create a new thing and stuff it inside the container Dog
+
+// User-defined constructor
+Dog.new <- function(name, age, sound)
+    // 'thing of Dog' is syntactic sugar for:
+    // box self <- thing
+    // self.__proto__ <- share Dog
+    // where __proto__ is another 'thing' to
+    // check when lookup fails
+    box self <- thing of Dog
+
+    self.name <- name
+    self.age <- age
+    self.sound <- sound
+
+    return self
+end
+
+Dog.birthday <- function(shared self)
+    self.age <- self.age + 1
+    print(self.name + " is turning " + string(self.age))
+end
+
+Dog.speak <- function(shared self)
+    print(self.name + " says " + self.sound + "!")
+end
+
+Dog.__tostring__ <- function(shared self)
+    return "<dog " + self.name + ">"
+end
+
+// Let's create a dog!
+box buddy <- Dog.new("Buddy", 4, "woof")
+buddy:birthday() // expect: Buddy is turning 5
+buddy:birthday() // expect: Buddy is turning 6

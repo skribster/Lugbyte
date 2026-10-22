@@ -10,7 +10,7 @@ namespace Luggage::Lib {
 
 // Library implementation functions -----------------------------
 
-static Value Print(VMCore& vm, Value* args, std::size_t argCount) {
+static Value Write(VMCore& vm, Value* args, std::size_t argCount) {
     for (std::size_t i = 0; i < argCount; i++) {
         if (i > 0) std::printf(" ");
 
@@ -21,6 +21,12 @@ static Value Print(VMCore& vm, Value* args, std::size_t argCount) {
         std::printf("%s", stringed->characters);
     }
 
+    return Value::Nil();
+}
+
+
+static Value Print(VMCore& vm, Value* args, std::size_t argCount) {
+    Write(vm, args, argCount);
     std::printf("\n");
 
     return Value::Nil();
@@ -128,29 +134,27 @@ static Value Type(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
-static Value NewThing(VMCore& vm, Value* args, std::size_t argCount) {
-    CheckArgc(vm, argCount, 0);
-
-    return ObjThing::New(vm);
+static Value Deepcopy(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+    return vm.Deepcopy(args[0]);
 }
 
 
 // Library out ------------------------------
 
 static constexpr NativeEntry baseLib[] = {
+    { "write",      &Write },
     { "print",      &Print },
     { "clock",      &Clock },
     { "error",      &Error },
     { "pcall",      &Pcall },
+    { "deepcopy",   &Deepcopy },
     { "type",       &Type },
 };
 
 // Function declaration of defined in lug_stdlib.h
 void OpenBase(VMCore& vm) { 
     DefineLib(vm, nullptr, baseLib); 
-
-    ObjThing* thingProto = NewLib(vm, "thing");
-    thingProto->Set("__call__", ObjNative::New(vm, "__call__", &NewThing));
 }
 
 }

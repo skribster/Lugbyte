@@ -226,8 +226,6 @@ void ObjString::Print() {
 
 ObjFunction* ObjFunction::New(VMCore& vm) {
     ObjFunction* function = AllocateObject<ObjFunction>(vm);
-    function->arity = 0;
-    function->name = nullptr;
     // No need to compute hash for ObjFunction. ObjClosure is what will
     // actually be used during runtime.
 

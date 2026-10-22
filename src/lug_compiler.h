@@ -140,6 +140,7 @@ private:
     VMCore& vm;
     bool isValidExprStmt{ false };
     Token pendingName{ Token::Synthetic("anonymous") };
+    std::size_t lastGetExpr{ SIZE_MAX };
 
     Chunk* CurrentChunk() const;
     void PushUnit(FunctionUnit* unit, FunctionType type);
@@ -195,14 +196,17 @@ private:
     // Expression methods
 
     void Expression();
+    bool StoredExpression();
+    void MarkGetter();
 
     void Grouping(bool canAssign);
     void Call(bool canAssign);
-    std::uint8_t ArgumentList(std::size_t argcMax);
+    ObjFunction::Arguments ArgumentList(std::size_t argcMax);
     void Index(bool canAssign);
     void Dot(bool canAssign);
 
     void Unary(bool canAssign);
+    void Share(bool canAssign);
     void Binary(bool canAssign);
     void And(bool canAssign);
     void Or(bool canAssign);
@@ -212,6 +216,7 @@ private:
     void Function(bool canAssign);
     void List(bool canAssign);
     void Dictionary(bool canAssign);
+    void Thing(bool canAssign);
     void Variable(bool canAssign);
     void NamedVariable(Token& name, bool canAssign);
 

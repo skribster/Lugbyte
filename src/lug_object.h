@@ -59,11 +59,23 @@ struct ObjString : Obj {
 // ObjFunction -----------------
 
 struct ObjFunction : Obj {
+    struct Arguments {
+        static constexpr std::size_t MAX_ARITY{ UINT8_MAX };
+
+        std::uint8_t arity{ 0 };
+        std::uint8_t shared{ 0 };
+
+        inline void MarkShared(std::size_t argIndex) {
+            shared |= (1 << argIndex);
+        }
+    };
+
     explicit ObjFunction(VMCore& vm) : Obj(vm, ObjType::FUNCTION), chunk(vm) {}
     ~ObjFunction() override;
     void Print() override;
 
-    std::size_t arity{ 0 };
+    Arguments parameters;
+
     std::size_t upvalueCount{ 0 };
     ObjString* name{ nullptr };
     Chunk chunk;
@@ -135,7 +147,6 @@ struct ObjList : Obj {
     Vector<Value>::Iterator begin() { return items.begin(); }
     Vector<Value>::Iterator end() { return items.end(); }
 
-
     static ObjList* New(VMCore& vm);
 };
 
@@ -155,6 +166,9 @@ struct ObjDict : Obj {
     Value Get(const Value& key) const;
     void Set(Value key, Value value);
     void Delete(Value key);
+
+    Table::Iterator begin() { return dictionary.begin(); }
+    Table::Iterator end()   { return dictionary.end(); }
 
     static ObjDict* New(VMCore& vm);
 };
@@ -176,6 +190,9 @@ struct ObjThing : Obj {
     void Set(Value key, Value field);
     // Small shortcut for setting a string field.
     void Set(const char* key, Value field);
+
+    Table::Iterator begin() { return attributes.begin(); }
+    Table::Iterator end()   { return attributes.end(); }
 
     static ObjThing* New(VMCore& vm);
 };

@@ -2,6 +2,7 @@
 
 #include <utility>
 #include <type_traits>
+#include <new>
 
 #include "lug_common.h"
 #include "lug_memory.h"
@@ -94,7 +95,7 @@ public:
         it. The new object takes the pointer, count, and capacity,
         then the source is reset to an empty state.
     */
-    Vector(Vector&& other)
+    Vector(Vector&& other) noexcept
         : vm(other.vm), data(other.data), count(other.count), capacity(other.capacity) 
     {
         other.data = nullptr; 

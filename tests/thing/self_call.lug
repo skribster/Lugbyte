@@ -1,7 +1,7 @@
-box enemy <- thing()
+box enemy <- thing
 enemy.health <- 10
 
-enemy.takeDamage <- function(self, damage)
+enemy.takeDamage <- function(shared self, damage)
     self.health <- self.health - damage
 end
 

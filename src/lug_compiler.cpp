@@ -750,7 +750,7 @@ void Compiler::BoxStatement() {
     pendingName = parser.previous;
 
     if (parser.Match(TokenType::LEFT_ARROW)) {
-        Expression();
+        StoredExpression();
     // box a
     } else {
         EmitByte(OpCode::NIL);
@@ -1119,11 +1119,13 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // INSPECT
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
     { &Compiler::Unary,         nullptr,                Precedence::NONE },             // NOT
+    { nullptr,                  nullptr,                Precedence::NONE },             // OF
     { nullptr,                  &Compiler::Or,          Precedence::OR },               // OR
     { nullptr,                  nullptr,                Precedence::NONE },             // RETURN
-    { nullptr,                  nullptr,                Precedence::NONE },             // SHARE
+    { &Compiler::Share,         nullptr,                Precedence::NONE },             // SHARE
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARED
     { nullptr,                  nullptr,                Precedence::NONE },             // THEN
+    { &Compiler::Thing,         nullptr,                Precedence::NONE },             // THING
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // TRUE
     { nullptr,                  nullptr,                Precedence::NONE },             // WHEN
     { nullptr,                  nullptr,                Precedence::NONE },             // WHILE
@@ -1156,6 +1158,44 @@ void Compiler::Expression() {
 
 
 /**
+ * Parses an expression that will be STORED somewhere,
+ * such as:
+ * 
+ * box a <- b
+ *          ^ stored expression
+ * 
+ * box whatever <- coolList[2]
+ *                 ^^^^^^^^^^^ stored expression
+ */
+bool Compiler::StoredExpression() {
+    bool shared = true;
+    Expression();
+
+    /*
+        As we compiled the last expression, any getters that
+        we encountered (get local, get global, get index, etc.)
+        marked the last get expression with their current bytecode
+        count.
+    
+        We can check whether or not the last expression was a getter,
+        and if so, we should copy the entire thing.
+    */
+    if (CurrentChunk()->bytecode.Count() == lastGetExpr) {
+        EmitByte(OpCode::COPY);
+        shared = false;
+    }
+
+    lastGetExpr = SIZE_MAX;
+    return shared;
+}
+
+
+void Compiler::MarkGetter() {
+    lastGetExpr = CurrentChunk()->bytecode.Count();
+}
+
+
+/**
  * Parses an expression in parentheses.
  */
 void Compiler::Grouping(bool canAssign) {
@@ -1171,31 +1211,63 @@ void Compiler::Grouping(bool canAssign) {
  * Parses () postfix.
  */
 void Compiler::Call(bool canAssign) {
-    std::uint8_t argCount = ArgumentList(UINT8_COUNT);
-    EmitBytes(OpCode::CALL, argCount);
+    ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT);
+
+    /*
+        We have two separate call instructions for performance sake.
+        Since most functions don't need to 'share' anything, we can
+        split a call operator into two cases where there's a shared
+        argument and when there's not.
+
+        A CALL_SHARED instruction has an additional std::uint16_t at 
+        the end that's supposed to represent which parameters  were
+        shared at the call site. 
+
+        Otherwise, we will emit a CALL instruction which doesn't have
+        to handle the messy share stuff.
+    */
+    if (arguments.shared == 0) {
+        EmitBytes(OpCode::CALL, arguments.arity);
+    } else {
+        EmitBytes(OpCode::CALL_SHARED, arguments.arity);
+        EmitByte(arguments.shared);
+    }
+    
+    
     isValidExprStmt = true;
 }
 
 
 /**
  * Parses a list of arguments ended with a parenthesis.
+ * Returns an Arguments struct containing info about the arguments.
  */
-std::uint8_t Compiler::ArgumentList(std::size_t argcMax) {
-    std::uint8_t argCount = 0;
+ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
+    ObjFunction::Arguments arguments;
 
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
         do {
-            Expression();
-            if (argCount == 255) {
+            /*
+                Users must mark parameters with 'share' if they don't want
+                a copy to be passed inside the function. For this reason, we
+                use a StoredExpression(), which will 
+            */
+            bool shared = StoredExpression();
+            if (shared) {
+                arguments.MarkShared(arguments.arity);
+            }
+            
+            if (arguments.arity == 255) {
                 parser.Error("Can't have more than 255 arguments.");
             }
 
-            argCount++;
+            arguments.arity++;
         } while (parser.Match(TokenType::COMMA));
     }   
 
     parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after arguments.");
-    return argCount;
+
+    return arguments;
 }
 
 
@@ -1212,6 +1284,7 @@ void Compiler::Index(bool canAssign) {
         isValidExprStmt = true;
     } else {
         EmitByte(OpCode::GET_INDEX);
+        MarkGetter();
     }
 }
 
@@ -1225,25 +1298,50 @@ void Compiler::Dot(bool canAssign) {
         parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'");
     }
 
-    std::uint8_t name = IdentifierConstant(parser.previous);
+    Token name = parser.previous;
+    std::uint8_t nameConstant = IdentifierConstant(name);
 
+    /*
+        A colon operator such as:
+        a:append(5)
+
+        Desugars to:
+        a.append(share a)
+    */
     if (dotted.type == TokenType::COLON) {
         parser.Consume(TokenType::LEFT_PAREN, "Expected function call after colon-accessed attribute.");
 
-        EmitBytes(OpCode::SELF, name);
-        std::uint8_t argCount = ArgumentList(UINT8_COUNT - 1);
-        EmitBytes(OpCode::CALL, argCount + 1);
+        EmitBytes(OpCode::SELF, nameConstant);
+        ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT - 1);
+
+        // ArgumentList() parsed all the arguments AFTER the self argument,
+        // so we have to add +1 to account for that.
+        EmitBytes(OpCode::CALL_SHARED, arguments.arity + 1);
+
+        /*  
+            The first argument is always shared in a self call.
+            We will add a leading '1' to the argument bitmask.
+            e.g.
+            101100 -> 1011001
+            (shift left one bit, then BITWISE OR by 1)
+        */
+        arguments.shared = (arguments.shared << 1) | 1;
+        EmitByte(arguments.shared);
+
         isValidExprStmt = true;
 
         return;
     }
 
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
+        pendingName = name;
+        
         Expression();
-        EmitBytes(OpCode::SET_ATTRIBUTE, name);
+        EmitBytes(OpCode::SET_ATTRIBUTE, nameConstant);
         isValidExprStmt = true;
     } else {
-        EmitBytes(OpCode::GET_ATTRIBUTE, name);
+        EmitBytes(OpCode::GET_ATTRIBUTE, nameConstant);
+        MarkGetter();
         isValidExprStmt = false;
     }
 }
@@ -1276,6 +1374,33 @@ void Compiler::Unary(bool canAssign) {
 
         default: UNREACHABLE();
     }
+}
+
+
+/**
+ * Parses a 'share' expression, which marks the given expression
+ * as not copied when stored.
+ */
+void Compiler::Share(bool canAssign) {
+    ParsePrecedence(Precedence::UNARY);
+
+    /*
+        When we encounter a share expression, we will set the last
+        get expression to nothing. This will signal to any StoredExpression
+        to not emit OpCode::COPY, as it checks lastGetExpr for
+        if the last expression was a getter. By setting it to SIZE_MAX,
+        we essentially erase any sign of a getter of the expression in 
+        front of 'share'.
+
+        For instance...
+
+        box value <- share thing
+                            ^^^^^
+            When parsing 'thing', we set lastGetExpr to the current bytecode
+            count to mark the last getter. Then 'share' will erase lastGetExpr
+            back to SIZE_MAX so SharedExpression() doesn't emit a copy operation.
+    */
+    lastGetExpr = SIZE_MAX;
 }
 
 
@@ -1397,9 +1522,29 @@ void Compiler::Function(bool canAssign) {
     // Parse arguments
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
         do {
-            currentUnit->function->arity++;
-            if (currentUnit->function->arity > 255) {
+            ObjFunction* currentFunction = currentUnit->function;
+            ObjFunction::Arguments& parameters = currentFunction->parameters;
+
+            parameters.arity++;
+            if (parameters.arity > UINT8_MAX) {
                 parser.ErrorAtCurrent("Can't have more than 255 parameters.");
+            }
+
+            if (parser.Match(TokenType::SHARED)) {
+                if (parameters.arity > 8) {
+                    parser.ErrorAtCurrent("Can't define shared parameters after the 8th parameter.");
+                }
+
+                /*
+                    When we reach a shared parameter, we store it in the function
+                    as a bitmask. sharedParameters is simply a uint where each bit
+                    corresponds to one parameter, 1 meaning it's shared, and 0 meaning
+                    it's not.
+
+                    e.g.
+                    1011 - first, second, fourth values are shared, third one is not
+                */
+                parameters.MarkShared(parameters.arity - 1);
             }
 
             std::uint8_t constant = ParseVariable("Expected parameter name.");
@@ -1432,7 +1577,7 @@ void Compiler::List(bool canAssign) {
     EmitByte(OpCode::LIST);
     if (!parser.Check(TokenType::RIGHT_BRACKET)) {
         do {
-            Expression();
+            StoredExpression();
             EmitByte(OpCode::APPEND);
 
         } while (parser.Match(TokenType::COMMA));
@@ -1443,7 +1588,7 @@ void Compiler::List(bool canAssign) {
 
 
 void Compiler::Dictionary(bool canAssign) {
-    EmitByte(OpCode::DICTIONARY);
+    EmitByte(OpCode::DICT);
     
     if (!parser.Check(TokenType::RIGHT_BRACE)) {
         do {
@@ -1453,7 +1598,7 @@ void Compiler::Dictionary(bool canAssign) {
                 // the default case (no brackets) is because of parsing troubles. Having
                 // something like a <- 4 <- "hello" confuses the parser because we
                 // don't know which '<-' denotes the key-value separation.
-                Expression();
+                StoredExpression();
                 parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after key.");
             } else {
                 // Otherwise, if we don't have a square bracket we can just parse primary.
@@ -1468,6 +1613,22 @@ void Compiler::Dictionary(bool canAssign) {
     }
 
     parser.Consume(TokenType::RIGHT_BRACE, "Expected '}' after list literal.");
+}
+
+
+/**
+ * Handles a thing expression
+ */
+void Compiler::Thing(bool canAssign) {
+    EmitByte(OpCode::THING);
+
+    if (parser.Match(TokenType::OF)) {
+        Expression();
+        
+        ObjString* protoAttribute = ObjString::FromLiteral(vm, "__proto__");
+        std::uint8_t protoConstant = MakeConstant(protoAttribute);
+        EmitBytes(OpCode::SET_ATTRIBUTE, protoConstant);
+    }
 }
 
 
@@ -1513,11 +1674,12 @@ void Compiler::NamedVariable(Token& name, bool canAssign) {
     }
     
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
-        Expression();
+        StoredExpression();
         EmitBytes(setOp, arg);
         isValidExprStmt = true;
     } else {
         EmitBytes(getOp, arg);
+        MarkGetter();
         isValidExprStmt = false;
     }
 }
