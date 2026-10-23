@@ -61,7 +61,7 @@ class VMCore {
 private:
     void Concatenate();
     inline int ClampIndex(int index, int numItems);
-    void Run(std::size_t stopDepth);
+    void Run();
     
     LugError lastError;
 

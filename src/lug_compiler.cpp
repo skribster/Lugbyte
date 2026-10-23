@@ -1279,7 +1279,7 @@ void Compiler::Index(bool canAssign) {
     parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after index.");
 
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
-        Expression();
+        StoredExpression();
         EmitByte(OpCode::SET_INDEX);
         isValidExprStmt = true;
     } else {
@@ -1336,7 +1336,7 @@ void Compiler::Dot(bool canAssign) {
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
         pendingName = name;
         
-        Expression();
+        StoredExpression();
         EmitBytes(OpCode::SET_ATTRIBUTE, nameConstant);
         isValidExprStmt = true;
     } else {
@@ -1623,11 +1623,13 @@ void Compiler::Thing(bool canAssign) {
     EmitByte(OpCode::THING);
 
     if (parser.Match(TokenType::OF)) {
+        EmitByte(OpCode::DUPLICATE);
         Expression();
         
         ObjString* protoAttribute = ObjString::FromLiteral(vm, "__proto__");
         std::uint8_t protoConstant = MakeConstant(protoAttribute);
         EmitBytes(OpCode::SET_ATTRIBUTE, protoConstant);
+        EmitByte(OpCode::POP);
     }
 }
 

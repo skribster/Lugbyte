@@ -91,7 +91,18 @@ public:
     }
 
     Iterator end() {
-        return Iterator(entries, entries + capacity);
+        Entry* last = entries + capacity;
+        return Iterator(last, last);
+    }
+
+    // Operator overloads --------
+
+    const Entry& operator[](std::size_t index) const {
+        return entries[index];
+    }
+
+    Entry& operator[](std::size_t index) {
+        return entries[index];
     }
 
 

@@ -155,20 +155,20 @@ struct ObjList : Obj {
 
 struct ObjDict : Obj {
     explicit ObjDict(VMCore& vm) 
-        : Obj(vm, ObjType::DICT), dictionary(vm) 
+        : Obj(vm, ObjType::DICT), entries(vm) 
     {}
 
     ~ObjDict() override;
     void Print() override;
 
-    Table dictionary;
+    Table entries;
 
     Value Get(const Value& key) const;
     void Set(Value key, Value value);
     void Delete(Value key);
 
-    Table::Iterator begin() { return dictionary.begin(); }
-    Table::Iterator end()   { return dictionary.end(); }
+    Table::Iterator begin() { return entries.begin(); }
+    Table::Iterator end()   { return entries.end(); }
 
     static ObjDict* New(VMCore& vm);
 };
@@ -185,11 +185,11 @@ struct ObjThing : Obj {
 
     Table attributes;
     
-    Value Get(Value field) const;
-    Value Get(const char* field) const;
-    void Set(Value key, Value field);
+    Value Get(Value attribute) const;
+    Value Get(const char* attribute) const;
+    void Set(Value attribute, Value value);
     // Small shortcut for setting a string field.
-    void Set(const char* key, Value field);
+    void Set(const char* attribute, Value value);
 
     Table::Iterator begin() { return attributes.begin(); }
     Table::Iterator end()   { return attributes.end(); }

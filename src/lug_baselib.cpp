@@ -61,6 +61,20 @@ static Value Error(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
+static Value Assert(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 2);
+    CheckType(vm, args[0], ValueType::BOOLEAN);
+    CheckType(vm, args[1], ObjType::STRING);
+
+    if (!args[0].AsBool()) {
+        ObjString* errorMessage = args[1].AsObj<ObjString>();
+        vm.RuntimeError(errorMessage->characters);
+    }
+    
+    return 0;
+}
+
+
 static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
     CheckType(vm, args[0], ObjType::CLOSURE);
@@ -147,6 +161,7 @@ static constexpr NativeEntry baseLib[] = {
     { "print",      &Print },
     { "clock",      &Clock },
     { "error",      &Error },
+    { "assert",     &Assert },
     { "pcall",      &Pcall },
     { "deepcopy",   &Deepcopy },
     { "type",       &Type },

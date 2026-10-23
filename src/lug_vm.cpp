@@ -89,11 +89,13 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
             ObjThing* copy = ObjThing::New(vm);
             memo[obj] = copy;
 
-            for (auto& attribute : *original) {
+            for (auto& attribute : original->attributes) {
                 Value name = DeepcopyValue(vm, attribute.key, memo);
                 Value v = DeepcopyValue(vm, attribute.value, memo);
-                copy->Set(name, v);   // was original->Set
+
+                copy->Set(name, v);
             }
+            
             return copy;
         }
 
@@ -199,16 +201,15 @@ ObjString* VMCore::ToString(Value value) {
                 
                 Value stringDunder = thing->Get("__tostring__");
                 if (!stringDunder.IsNil()) {
-                    Value t = Pop();
                     Push(stringDunder);
-                    Push(t);
+                    Push(thing);
 
                     // We will 'share' the thing.
                     CallValue(stringDunder, 1, 0b1);
                     Value result = Pop();
                     if (!result.IsObj(ObjType::STRING)) {
                         RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
-                    } 
+                    }
 
                     return result.AsObj<ObjString>();
                 }
@@ -306,7 +307,7 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
                 return;
             }
             
-            case ObjType::NATIVE: {
+            case ObjType::NATIVE: {               
                 ObjNative* native = value.AsObj<ObjNative>();
                 Value result = native->function(*this, stackTop - argCount, argCount);
                 
@@ -363,19 +364,12 @@ void VMCore::Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t share
         RuntimeError("Stack overflow.");
     }
 
-    /*
-        A function is considered 'finished'
-        when the call frame count returns back to the original depth before
-        the function was called.
-    */
-    std::size_t oldDepth = frameCount;
-
-    CallFrame& frame = frames[frameCount++];
-    frame.closure = closure;
-    frame.ip = closure->function->chunk.bytecode.Data();
-    frame.slots = stackTop - argCount - 1;
+    CallFrame& newFrame = frames[frameCount++];
+    newFrame.closure = closure;
+    newFrame.ip = closure->function->chunk.bytecode.Data();
+    newFrame.slots = stackTop - argCount - 1;
     
-    Run(oldDepth);
+    Run();
 }
 
 
@@ -418,7 +412,7 @@ void VMCore::CloseUpvalues(Value* last) {
  * The actual interpreter loop where it runs 
  * each instruction from its chunk.
  */
-void VMCore::Run(std::size_t stopDepth) {
+void VMCore::Run() {
     CallFrame* frame = &frames[frameCount - 1];
 
     #define READ_BYTE() (*frame->ip++)
@@ -781,15 +775,15 @@ void VMCore::Run(std::size_t stopDepth) {
 
                 std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
                 while (
-                    index <= dict->dictionary.capacity 
-                    && dict->dictionary.entries[index].IsEmpty()
+                    index <= dict->entries.capacity 
+                    && dict->entries.entries[index].IsEmpty()
                 ) index++;
 
-                if (index == dict->dictionary.capacity) {
+                if (index == dict->entries.capacity) {
                     frame->ip += jumpToEnd;
                 }
 
-                Entry& currentEntry = dict->dictionary.entries[index];
+                Entry& currentEntry = dict->entries.entries[index];
                 key = currentEntry.key;
                 value = currentEntry.value;
                 probingIndex = static_cast<int>(index);
@@ -836,12 +830,12 @@ void VMCore::Run(std::size_t stopDepth) {
 
                 std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
                 do index++; while (
-                    index <= dict->dictionary.capacity 
-                    && dict->dictionary.entries[index].IsEmpty()
+                    index <= dict->entries.capacity 
+                    && dict->entries.entries[index].IsEmpty()
                 );
 
-                if (index < dict->dictionary.capacity) {
-                    Entry& currentEntry = dict->dictionary.entries[index];
+                if (index < dict->entries.capacity) {
+                    Entry& currentEntry = dict->entries.entries[index];
                     key = currentEntry.key;
                     value = currentEntry.value;
                     probingIndex = static_cast<int>(index);
@@ -961,10 +955,6 @@ void VMCore::Run(std::size_t stopDepth) {
             // Attempt to call the callee, whether it is of any value type.
             CallValue(Peek(argCount), argCount, 0b0);
             
-            // After we call the value, there will be a new call frame on the 
-            // frame stack. Let's update our pointer to match that.
-            frame = &frames[frameCount - 1];
-            
             DISPATCH();
         }
         
@@ -973,7 +963,6 @@ void VMCore::Run(std::size_t stopDepth) {
             std::uint8_t shared = READ_BYTE();
 
             CallValue(Peek(argCount), argCount, shared);
-            frame = &frames[frameCount - 1];
             
             DISPATCH();
         }
@@ -1195,17 +1184,24 @@ void VMCore::Run(std::size_t stopDepth) {
         }
 
         CASE(SET_ATTRIBUTE): {
+            // [ <thing> ][ 5 ]
+            //   ^^^^^^^   ^^^   ^^^^^^
+            //   object   value  stackTop
+            //   Peek(1)  Peek(0)
+
             ObjString* attributeName = READ_STRING();
-            if (!Peek(1).IsObj(ObjType::THING)) {
+            Value object = Peek(1);
+            Value value = Peek(0);
+
+            if (!object.IsObj(ObjType::THING)) {
                 RuntimeError(
                     "Attribute '%s' does not exist on value of type '%s'.", 
                     attributeName->characters, 
-                    Peek(0).StringType()
+                    object.StringType()
                 );
             }
 
-            ObjThing* thing = Peek(1).AsObj<ObjThing>();
-            Value value = Peek(0);
+            ObjThing* thing = object.AsObj<ObjThing>();
             thing->Set(attributeName, value);
 
             Pop();
@@ -1229,13 +1225,8 @@ void VMCore::Run(std::size_t stopDepth) {
             frameCount--;
             stackTop = frame->slots;
             Push(result);
-            if (frameCount == stopDepth) {
-                return;
-            }
 
-            frame = &frames[frameCount - 1];
-
-            DISPATCH(); // Break out of the interpreter loop.
+            return;
         }
     }
 

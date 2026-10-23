@@ -383,8 +383,8 @@ void ObjDict::Print() {
 
     std::size_t numPrinted = 0;
 
-    for (std::size_t i = 0; i < dictionary.capacity; i++) {
-        Entry& entry = dictionary.entries[i];
+    for (std::size_t i = 0; i < entries.capacity; i++) {
+        const Entry& entry = entries[i];
 
         if (entry.key.type == ValueType::TOMBSTONE) continue;
         if (entry.key.IsNil()) continue;
@@ -393,7 +393,7 @@ void ObjDict::Print() {
         std::printf(" : ");
         Value::Print(entry.value);
         
-        if (numPrinted != dictionary.count - 1) std::printf(", ");
+        if (numPrinted != entries.count - 1) std::printf(", ");
         numPrinted++;
     }
 
@@ -402,7 +402,7 @@ void ObjDict::Print() {
 
 
 Value ObjDict::Get(const Value& key) const {
-    Value* value = dictionary.Get(key);
+    Value* value = entries.Get(key);
 
     if (value == nullptr) return Value::Nil();
     return *value;
@@ -410,12 +410,12 @@ Value ObjDict::Get(const Value& key) const {
 
 
 void ObjDict::Set(Value key, Value value) {
-    dictionary.Set(key, value);
+    entries.Set(key, value);
 }
 
 
 void ObjDict::Delete(Value key) {
-    dictionary.Delete(key);
+    entries.Delete(key);
 }
 
 
@@ -438,21 +438,25 @@ void ObjThing::Print() {
 }
 
 
-Value ObjThing::Get(Value key) const {
-    Value* value = attributes.Get(key);
-    if (value != nullptr) return *value;
+Value ObjThing::Get(Value attribute) const {
+    Value* value = attributes.Get(attribute);
+    if (value != nullptr) {
+        return *value;
+    }
 
     Value* protoValue = attributes.Get("__proto__");
-    if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) return Value::Nil();
+    if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) {
+        return Value::Nil();
+    }
 
     ObjThing* proto = protoValue->AsObj<ObjThing>();
-    return proto->Get(key);
+    return proto->Get(attribute);
 }   
 
 
-Value ObjThing::Get(const char* key) const {
-    return Get(ObjString::FromLiteral(vm, key));
-}   
+Value ObjThing::Get(const char* attribute) const {
+    return Get(ObjString::FromLiteral(vm, attribute));
+}
 
 
 void ObjThing::Set(Value attribute, Value value) {

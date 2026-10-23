@@ -9,9 +9,9 @@ namespace Luggage::Lib {
 
 // API Parameter Checking ---------------------------------
     
-void CheckArgc(VMCore& vm, std::size_t argv, std::size_t expected) {
-    if (argv != expected) {
-        vm.RuntimeError("Expected %zu argument(s), got %zu", argv, expected);
+void CheckArgc(VMCore& vm, std::size_t argc, std::size_t expected) {
+    if (argc != expected) {
+        vm.RuntimeError("Expected %zu argument(s), got %zu", argc, expected);
     }
 };
 

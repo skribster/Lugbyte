@@ -70,7 +70,7 @@ bool Table::Delete(Value key) {
 
     // Key doesn't exist in the table in the first place
     Entry* entry = FindEntry(key);
-    if (entry->key.IsNil()) return false; 
+    if (entry->IsEmpty()) return false; 
 
     // Place a tombstone in the entry. Tombstones are
     // represented as an entry with a TOMBSTONE value.
