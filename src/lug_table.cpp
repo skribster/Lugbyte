@@ -81,6 +81,26 @@ bool Table::Delete(Value key) {
 }
 
 
+/**
+ * This function relates to the garbage collector. It
+ * deletes all 'white' keys from the table. This comes
+ * in practice in the string interned table, where we have
+ * to remove all strings (added as table keys) that are 
+ * still 'white' before we actually sweep.
+ */
+void Table::DeleteWhite() {
+    for (auto& entry : *this) {
+        if (
+            !entry.IsEmpty() 
+            && entry.key.IsObj()
+            && !entry.key.AsObj()->isMarked // (is white)
+        ) {
+            Delete(entry.key);
+        }
+    }
+}
+
+
 ObjString* Table::FindString(const char* chars, std::size_t length, std::uint32_t hash) const {
     if (count == 0) return nullptr;
 

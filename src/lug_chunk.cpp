@@ -1,7 +1,7 @@
 #include "lug_chunk.h"
 #include "lug_memory.h"
 #include "lug_opcodes.h"
-
+#include "lug_vm.h"
 
 namespace Luggage {
 
@@ -60,7 +60,12 @@ void Chunk::WriteConstant(Value value, std::size_t line) {
  * Adds a constant into the chunk's constant pool.
  */
 std::size_t Chunk::AddConstant(Value value) {
+    // So the GC doesn't collect when we add it to the vector
+    vm.stack.Push(value); 
+
     constants.PushBack(value);
+    vm.stack.Pop();
+
     return constants.Count() - 1;
 }   
 

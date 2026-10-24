@@ -5,8 +5,8 @@
 #include "luggage.hpp"
 
 #include "lug_common.h"
-#include "lug_vm.h"
 #include "lug_chunk.h"
+#include "lug_object.h"
 #include "lug_opcodes.h"
 #include "lug_value.h"
 #include "lug_parser.h"
@@ -132,6 +132,7 @@ public:
     explicit Compiler(VMCore& vm) : vm(vm) {}
 
     ObjFunction* Compile(const char* source);
+    void MarkRoots();
 
 private:
     FunctionUnit* currentUnit{ nullptr };

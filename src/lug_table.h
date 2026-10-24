@@ -76,6 +76,7 @@ public:
     Value* Get(const Value& key) const;
     Value* Get(const char* keyName) const;
     bool Delete(Value key);
+    void DeleteWhite();
     
     ObjString* FindString(
         const char* characters, 

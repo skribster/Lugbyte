@@ -8,11 +8,11 @@
 #include "lug_object.h"
 #include "lug_chunk.h"
 #include "lug_table.h"
+#include "lug_compiler.h"
+#include "lug_gc.h"
 
 namespace Luggage {
 
-constexpr std::size_t FRAMES_MAX = 64;
-constexpr std::size_t STACK_MAX = (FRAMES_MAX * UINT8_COUNT);
 
 struct CallFrame {
     ObjClosure* closure{ nullptr };
@@ -21,74 +21,107 @@ struct CallFrame {
 };
 
 
+struct Stack {
+    static constexpr std::size_t FRAMES_MAX = 64;
+    static constexpr std::size_t STACK_MAX = (FRAMES_MAX * UINT8_COUNT);
+
+    CallFrame frames[FRAMES_MAX];
+    std::size_t frameCount{ 0 };
+    Value stack[STACK_MAX];
+    Value* top{ nullptr };
+
+    inline void AddFrame(ObjClosure* closure, Value* slots) {
+        CallFrame& newFrame = frames[frameCount++];
+        newFrame.closure = closure;
+        newFrame.ip = closure->function->chunk.bytecode.Data();
+        newFrame.slots = slots;
+    }
+
+    inline CallFrame* GetFrame() {
+        return &frames[frameCount - 1];
+    }
+
+    inline void RemoveFrame() {
+        top = GetFrame()->slots;
+        frameCount--;
+    }
+
+    inline void Reset() {
+        top = stack;
+        frameCount = 0;
+    }
+    
+    inline void Print() {
+        for (Value* slot = stack; slot < top; slot++) {                        \
+            std::printf("[ ");                                                      \
+            Value::Print(*slot);                                                    \
+            std::printf(" ]");                                                      \
+        }                                                                           \
+                                                                                    \
+        std::printf("\n");  
+    }
+
+    inline void Push(Value value) {
+        *top = value;
+        top++;
+    }
+
+    inline Value& Peek(std::size_t distance) const {
+        return top[-1 - distance];
+    }
+
+    inline Value Pop() {
+        top--;
+        return *top;
+    }
+};
+
+
 class VMCore {
     public:
     VMCore();
     ~VMCore();
     
+    bool Interpret(std::string_view source);
+
     void DefineNative(const char* name, NativeFn function);
-    void AddObject(Obj* obj);
     
-    void Push(Value value);
-    Value& Peek(std::size_t distance) const;
-    Value Pop();
+    // Garbage collector methods ----------
+    void AddObject(Obj* obj);
+    void CollectGarbage();
+    void MarkRoots();
     
     void CallValue(Value value, std::uint8_t argCount, std::uint8_t shared);
     void Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared = 0);
     ObjUpvalue* CaptureUpvalue(Value* local);
     void CloseUpvalues(Value* last);
     
-    void ResetStack();
     ObjThing* GetProtoOf(Value value) const;
     ObjString* ToString(Value value);
     Value Deepcopy(const Value& value);
-
+    
+    // Member variables -------------------
     Table strings;
     Table globals;
-    Obj* objects{ nullptr };
+    Stack stack;
 
-    CallFrame frames[FRAMES_MAX];
-    std::size_t frameCount{ 0 };
-    Value stack[STACK_MAX];
-    Value* stackTop{ nullptr };
+    Obj* objects{ nullptr };
     ObjUpvalue* openUpvalues{ nullptr };
-    
+
+    Compiler compiler;
+    GC gc;
+
     template<typename... Args>
     [[noreturn]] void RuntimeError(const char* format, Args... args);
-
-    std::size_t bytesAllocated{ 0 };
     
 private:
     void Concatenate();
-    inline int ClampIndex(int index, int numItems);
     void Run();
     
     LugError lastError;
 
     friend class VM;
 };
-
-
-/**
- * Clamps a list index given the list's number of items.
- * If it's negative, it will wrap around to the end of the list.
- * If the index is larger than the number of items, we'll throw
- * an error.
- * Otherwise, just keep the list index.
- */
-inline int VMCore::ClampIndex(int index, int numItems) {
-    // This handles the wrap-around case for negative numbers.
-    if (index < 0) {
-        return ((index % numItems) + numItems) % numItems; 
-    }
-
-    // -1 because itemCount starts at 1, while indices start at 0
-    if (index > numItems - 1) {
-        RuntimeError("Index '%d' out of range.", index);
-    }
-
-    return index;
-}
 
 
 template<typename... Args>
@@ -105,8 +138,8 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     errorMessage += formatted;
     errorMessage += '\n';
 
-    for (int i = frameCount - 1; i >= 0; i--) {
-        CallFrame& frame = frames[i];
+    for (int i = stack.frameCount - 1; i >= 0; i--) {
+        CallFrame& frame = stack.frames[i];
         ObjFunction* function = frame.closure->function;
         std::size_t instruction = frame.ip - function->chunk.bytecode.Data() - 1;
         std::size_t line = function->chunk.GetLine(instruction);
@@ -132,7 +165,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
         std::strlen(errorMessage.c_str())
     );
 
-    Push(messageValue);
+    stack.Push(messageValue);
 
     throw error;
 }

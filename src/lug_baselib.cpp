@@ -81,18 +81,18 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
 
     ObjClosure* function = args[0].AsObj<ObjClosure>();
     ObjThing* result = ObjThing::New(vm);
-    vm.Push(result);
+    vm.stack.Push(result);
 
     /*
         When we error, we want to rewind to the saved state of the
         stack. Keep the old state here and if fail, set stackTop and
         frameCount back to its originals.
     */
-    Value* oldTop = vm.stackTop;
-    std::size_t oldFrameCount = vm.frameCount;
+    Value* oldTop = vm.stack.top;
+    std::size_t oldFrameCount = vm.stack.frameCount;
 
     try {
-        vm.Push(function);
+        vm.stack.Push(function);
         vm.Call(function, 0);
         result->Set("success", true);
         result->Set("result", Value::Nil());
@@ -101,7 +101,7 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
         const char* errorMessage = error.message.c_str();
         
         result->Set("success", false);
-        result->Set("result", vm.Peek(0));
+        result->Set("result", vm.stack.Peek(0));
 
         /*
             When the pcall ends, we want to make sure that any upvalues
@@ -130,12 +130,12 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
             that it's pointing to, but it's already been freed.
         */
         vm.CloseUpvalues(oldTop);
-        vm.frameCount = oldFrameCount;
-        vm.stackTop = oldTop;
+        vm.stack.frameCount = oldFrameCount;
+        vm.stack.top = oldTop;
 
     }
 
-    return vm.Pop();
+    return vm.stack.Pop();
 }
 
 

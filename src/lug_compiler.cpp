@@ -1,5 +1,6 @@
 #include "lug_compiler.h"
 #include "lug_debug.h"
+#include "lug_vm.h"
 
 namespace Luggage {
 
@@ -247,6 +248,16 @@ ObjFunction* Compiler::Compile(const char* source) {
     return function;
 }
 
+
+void Compiler::MarkRoots() {
+    FunctionUnit* unit = currentUnit;
+    while (unit != nullptr) {
+        ObjFunction* function = unit->function;
+        vm.gc.MarkObject(unit->function);
+        unit = unit->enclosing;
+    }
+}
+
 // Compiler private methods -----------------------------
 
 Chunk* Compiler::CurrentChunk() const {
@@ -257,6 +268,14 @@ Chunk* Compiler::CurrentChunk() const {
 void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->function = ObjFunction::New(vm);
     unit->type = type;
+
+    // Register the unit into the function linked list 
+    // BEFORE we allocate the function name, otherwise if
+    // ObjString::FromSource leads to an allocation, the ObjFunction
+    // of this unit will be freed because it's unable to be marked
+    // if it's not in the linked list.
+    unit->enclosing = currentUnit;
+    currentUnit = unit;
     
     if (type != FunctionType::SCRIPT) {
         unit->function->name = ObjString::FromSource(vm, pendingName.start, pendingName.length);
@@ -271,9 +290,6 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     local.depth = 0;
     local.name.start = "";
     local.name.length = 0;
-    
-    unit->enclosing = currentUnit;
-    currentUnit = unit;
 }
 
 

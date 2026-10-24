@@ -61,8 +61,4 @@ constexpr std::size_t GrowCapacity(std::size_t capacity) {
     return capacity < 8 ? 8 : capacity * 2;
 }
 
-
-void FreeObjects(VMCore& vm);
-
-
 }

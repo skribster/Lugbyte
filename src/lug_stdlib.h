@@ -34,14 +34,14 @@ void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
 
     for (const NativeEntry& entry : entries) {
         ObjString* entryName = ObjString::FromSource(vm, entry.name, std::strlen(entry.name));
+        vm.stack.Push(entryName);
         ObjNative* entryFunction = ObjNative::New(vm, entry.name, entry.function);
-        vm.Push(entryName);
-        vm.Push(entryFunction);
+        vm.stack.Push(entryFunction);
 
         library->Set(entryName, entryFunction);
 
-        vm.Pop();
-        vm.Pop();
+        vm.stack.Pop();
+        vm.stack.Pop();
     }
 }
 

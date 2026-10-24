@@ -6,9 +6,7 @@
 #include "lug_vm.h"
 #include "lug_opcodes.h"
 #include "lug_debug.h"
-#include "lug_compiler.h"
 #include "lug_memory.h"
-
 #include "lug_stdlib.h"
 
 namespace Luggage {
@@ -29,6 +27,10 @@ static bool IsTruthy(Value value) {
 }
 
 
+/**
+ * Counts the trailing zeroes in a std::uint8_t byte
+ * before the first set-bit.
+ */
 static int CountTrailingZeroes(std::uint8_t byte) {
     if (byte == 0) return 8;
 
@@ -39,6 +41,9 @@ static int CountTrailingZeroes(std::uint8_t byte) {
 }
 
 
+/**
+ * The implementation for deepcopy. 
+ */
 static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Obj*, Obj*>& memo) {
     if (!value.IsObj()) return value;
 
@@ -105,50 +110,67 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
 }
 
 
+/**
+ * Clamps a list index given the list's number of items.
+ * If it's negative, it will wrap around to the end of the list.
+ * If the index is larger than the number of items, we'll return
+ * -1.
+ * Otherwise, keep the list index.
+ */
+static int ClampIndex(int index, int numItems) {
+    // This handles the wrap-around case for negative numbers.
+    if (index < 0) {
+        return ((index % numItems) + numItems) % numItems; 
+    }
+
+    // -1 because itemCount starts at 1, while indices start at 0
+    if (index > numItems - 1) {
+        return -1;
+    }
+
+    return index;
+}
+
+
 // VMCore methods -----------------------------------
 
 VMCore::VMCore() 
-: strings(*this) 
-, globals(*this)
+    : strings(*this), globals(*this), gc(*this), compiler(*this)
 {
-    ResetStack();
+    stack.Reset();
 }
 
+
 VMCore::~VMCore() {
-    Memory::FreeObjects(*this); 
+    gc.FreeObjects();
 }   
 
 
-/**
- * Pushes the given value onto the stack.
- */
-void VMCore::Push(Value value) {
-    *stackTop = value;
-    stackTop++;   
-}
+bool VMCore::Interpret(std::string_view source) {
+    try {
+        ObjFunction* function = compiler.Compile(source.data());
+        stack.Push(function);
 
+        ObjClosure* closure = ObjClosure::New(*this, function);
+        stack.Pop();
+        stack.Push(closure);
+        Call(closure, 0);
 
-Value& VMCore::Peek(std::size_t distance) const {
-    return stackTop[-1 - distance];
-}
+        // Pop the return value. During the REPL, the last OP_RETURN
+        // started to push the 'nil' value onto the very bottom of the
+        // stack, causing a bunch of 'nil' values to accumulate at the bottom. 
+        stack.Pop();
 
+    } catch (LugError error) {
+        lastError = error;
+        
+        //! Not the best way right now to handle errors. Ideally the user'd like the stack to
+        // rewind to how it was, but this is a good temporary fix.
+        stack.Reset();
+        return false;
+    }
 
-/**
- * Pops the top value off the stack and returns
- * it back.
- */
-Value VMCore::Pop() {
-    stackTop--;
-    return *stackTop;
-}
-
-
-/**
- * Discards all of the stack's items.
- */
-void VMCore::ResetStack() {
-    stackTop = stack;
-    frameCount = 0;
+    return true;
 }
 
 
@@ -201,12 +223,12 @@ ObjString* VMCore::ToString(Value value) {
                 
                 Value stringDunder = thing->Get("__tostring__");
                 if (!stringDunder.IsNil()) {
-                    Push(stringDunder);
-                    Push(thing);
+                    stack.Push(stringDunder);
+                    stack.Push(thing);
 
                     // We will 'share' the thing.
                     CallValue(stringDunder, 1, 0b1);
-                    Value result = Pop();
+                    Value result = stack.Pop();
                     if (!result.IsObj(ObjType::STRING)) {
                         RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
                     }
@@ -256,8 +278,8 @@ Value VMCore::Deepcopy(const Value& value) {
  * Then, pushes back the concatenated result.
  */
 void VMCore::Concatenate() {
-    ObjString* b = Peek(0).AsObj<ObjString>();
-    ObjString* a = Peek(1).AsObj<ObjString>();
+    ObjString* b = stack.Peek(0).AsObj<ObjString>();
+    ObjString* a = stack.Peek(1).AsObj<ObjString>();
 
     std::size_t length = a->length + b->length;
     char* chars = Memory::Allocate<char>(*this, length + 1);
@@ -266,9 +288,9 @@ void VMCore::Concatenate() {
     chars[length] = '\0';
 
     ObjString* result = ObjString::FromAllocated(*this, chars, length);
-    Pop();
-    Pop();
-    Push(result);
+    stack.Pop();
+    stack.Pop();
+    stack.Push(result);
 }
 
 
@@ -277,22 +299,82 @@ void VMCore::Concatenate() {
  * the given name.
  */
 void VMCore::DefineNative(const char* name, NativeFn function) {
-    Push(ObjString::FromLiteral(*this, name));
-    Push(ObjNative::New(*this, name, function));
+    stack.Push(ObjString::FromLiteral(*this, name));
+    stack.Push(ObjNative::New(*this, name, function));
 
-    globals.Set(Peek(1).AsObj<ObjString>(), Peek(0));
+    globals.Set(stack.Peek(1).AsObj<ObjString>(), stack.Peek(0));
 
-    Pop();
-    Pop();
+    stack.Pop();
+    stack.Pop();
 }
 
 
 /**
  * Adds an object to the VM's object linked list.
  */
-void VMCore::AddObject(Obj* object) {
-    object->next = objects;
-    objects = object;
+void VMCore::AddObject(Obj* obj) {
+    gc.AddObject(obj);
+}
+
+
+/**
+ * Frees all the VM's unused memory.
+ */
+void VMCore::CollectGarbage() {
+    gc.Collect();
+}
+
+
+/**
+ * This marks all of the values that the VM can reach directly
+ * without going through a reference, otherwise known as the roots.
+ */
+void VMCore::MarkRoots() {
+    /*
+        The VM can access all the values on the stack. Let's loop 
+        through the stack and mark any object.
+    */
+    for (Value* slot = stack.stack; slot < stack.top; slot++) {
+        gc.MarkValue(*slot);
+    }
+
+    /*
+        The VM can also access all of the global variables without
+        going through a reference. Let's mark those as well.
+    */
+    gc.MarkTable(globals);
+
+    /*
+        Each call frame also has data that the VM can access.
+        Each call frame has a closure that the VM uses for accessing
+        upvalues, constants, etc. that may be of Obj type.
+
+        Call frame -> Closure -> Chunk -> Constants -> other objects
+        Call frame -> Closure -> Upvalues -> other objects
+    */
+    for (std::size_t i = 0; i < stack.frameCount; i++) {
+        gc.MarkObject(stack.frames[i].closure);
+    }
+
+    /*
+        The open upvalue list is another set of values that the
+        VM can directly reach. Let's traverse the linked list and
+        mark each one.
+    */
+    for (
+        ObjUpvalue* upvalue = openUpvalues; 
+        upvalue != nullptr; 
+        upvalue = upvalue->next
+    ) {
+        gc.MarkObject(upvalue);
+    }
+
+    /*
+        The compiler also grabs memory from the heap for literals
+        and the constant table. We also want to keep track of those
+        objects as well.
+    */
+    compiler.MarkRoots();
 }
 
 
@@ -309,13 +391,13 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
             
             case ObjType::NATIVE: {               
                 ObjNative* native = value.AsObj<ObjNative>();
-                Value result = native->function(*this, stackTop - argCount, argCount);
+                Value result = native->function(*this, stack.top - argCount, argCount);
                 
                 // Rewind the stack right before the ObjNative.
-                stackTop -= argCount + 1;
+                stack.top -= argCount + 1;
                 
                 // Push the result of the function.
-                Push(result);
+                stack.Push(result);
                 return;
             }
             
@@ -360,15 +442,11 @@ void VMCore::Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t share
         RuntimeError("Expected a shared argument at argument %d", index + 1);
     }
 
-    if (frameCount == FRAMES_MAX) {
+    if (stack.frameCount == Stack::FRAMES_MAX) {
         RuntimeError("Stack overflow.");
     }
 
-    CallFrame& newFrame = frames[frameCount++];
-    newFrame.closure = closure;
-    newFrame.ip = closure->function->chunk.bytecode.Data();
-    newFrame.slots = stackTop - argCount - 1;
-    
+    stack.AddFrame(closure, stack.top - argCount - 1);
     Run();
 }
 
@@ -413,7 +491,7 @@ void VMCore::CloseUpvalues(Value* last) {
  * each instruction from its chunk.
  */
 void VMCore::Run() {
-    CallFrame* frame = &frames[frameCount - 1];
+    CallFrame* frame = stack.GetFrame();
 
     #define READ_BYTE() (*frame->ip++)
     #define READ_CONSTANT() (frame->closure->function->chunk.constants[READ_BYTE()])
@@ -422,12 +500,12 @@ void VMCore::Run() {
 
     #define BINARY_OP(op)                               \
     do {                                                \
-        Value b = Pop();                                \
-        Value a = Pop();                                \
+        Value b = stack.Pop();                                \
+        Value a = stack.Pop();                                \
         if (!a.IsNumber() || !b.IsNumber()) {           \
             RuntimeError("Operands must be numbers.");  \
         }                                               \
-        Push(a.AsNumber() op b.AsNumber());             \
+        stack.Push(a.AsNumber() op b.AsNumber());             \
     } while (false)
 
     #define CLAMP_INDEX(index, numItems)                                    \
@@ -446,13 +524,7 @@ void VMCore::Run() {
     #define TRACE_EXECUTION()                                                       \
     do {                                                                            \
         std::printf("          ");                                                  \
-        for (Value* slot = stack; slot < stackTop; slot++) {                        \
-            std::printf("[ ");                                                      \
-            Value::Print(*slot);                                                    \
-            std::printf(" ]");                                                      \
-        }                                                                           \
-                                                                                    \
-        std::printf("\n");                                                          \
+        stack.Print();                                                              \
                                                                                     \
         Debug::DisassembleInstruction(                                              \
             frame->closure->function->chunk,                                        \
@@ -495,54 +567,54 @@ void VMCore::Run() {
     {
         CASE(CONSTANT): {
             Value constant = READ_CONSTANT();
-            Push(constant);
+            stack.Push(constant);
             DISPATCH();
         }
 
         CASE(NEGATE): {
-            Value value = Pop();
+            Value value = stack.Pop();
             if (!value.IsNumber()) {
                 RuntimeError("Operand must be a number.");
             }
 
-            Push(-value.AsNumber());
+            stack.Push(-value.AsNumber());
             DISPATCH();
         }
 
         CASE(NOT): {
-            Value value = Pop();
-            Push(IsFalsy(value));
+            Value value = stack.Pop();
+            stack.Push(IsFalsy(value));
             DISPATCH();
         }
 
         CASE(TRUE): {
-            Push(true);
+            stack.Push(true);
             DISPATCH();
         }
 
         CASE(FALSE): {
-            Push(false);
+            stack.Push(false);
             DISPATCH();
         }
 
         CASE(NIL): {
-            Push(Value::Nil());
+            stack.Push(Value::Nil());
             DISPATCH();
         }
 
         CASE(ADD): {
-            if (Peek(0).IsObj(ObjType::STRING) && Peek(1).IsObj(ObjType::STRING)) {
+            if (stack.Peek(0).IsObj(ObjType::STRING) && stack.Peek(1).IsObj(ObjType::STRING)) {
                 Concatenate();
-            } else if (Peek(0).IsNumber() && Peek(1).IsNumber()) {
-                double b = Pop().AsNumber();
-                double a = Pop().AsNumber();
+            } else if (stack.Peek(0).IsNumber() && stack.Peek(1).IsNumber()) {
+                double b = stack.Pop().AsNumber();
+                double a = stack.Pop().AsNumber();
 
-                Push(a + b);
+                stack.Push(a + b);
 
             } else {
                 RuntimeError("Can't add operands of type '%s' and '%s' together.", 
-                    Peek(1).StringType(), 
-                    Peek(0).StringType()
+                    stack.Peek(1).StringType(), 
+                    stack.Peek(0).StringType()
                 );
                 return;
             }
@@ -561,7 +633,7 @@ void VMCore::Run() {
         }
 
         CASE(DIVIDE): {
-            if (Peek(0).IsNumber() && Peek(0).AsNumber() == 0) {
+            if (stack.Peek(0).IsNumber() && stack.Peek(0).AsNumber() == 0) {
                 RuntimeError("Can't divide by zero.");
             }
 
@@ -570,23 +642,23 @@ void VMCore::Run() {
         }
 
         CASE(MODULO): {
-            Value bValue = Pop();
-            Value aValue = Pop();
+            Value bValue = stack.Pop();
+            Value aValue = stack.Pop();
             if (!aValue.IsNumber() || !bValue.IsNumber()) {           
                 RuntimeError("Operands must be numbers.");
             }    
 
             double a = aValue.AsNumber();
             double b = bValue.AsNumber();
-            Push(a - std::floor(a / b) * b);
+            stack.Push(a - std::floor(a / b) * b);
             
             DISPATCH();
         }
 
         CASE(EQUAL): {
-            Value b = Pop();
-            Value a = Pop();
-            Push(a == b);
+            Value b = stack.Pop();
+            Value a = stack.Pop();
+            stack.Push(a == b);
             DISPATCH();
         }
 
@@ -618,7 +690,7 @@ void VMCore::Run() {
 
         CASE(JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(Peek(0))) {
+            if (IsFalsy(stack.Peek(0))) {
                 frame->ip += numBytesToJump;
             }
             DISPATCH();
@@ -626,7 +698,7 @@ void VMCore::Run() {
 
         CASE(JUMP_IF_TRUE): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(Peek(0))) {
+            if (IsTruthy(stack.Peek(0))) {
                 frame->ip += numBytesToJump;
             }
             DISPATCH();
@@ -634,27 +706,27 @@ void VMCore::Run() {
 
         CASE(JUMP_IF_FALSE_OR_POP): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(Peek(0))) {
+            if (IsFalsy(stack.Peek(0))) {
                 frame->ip += numBytesToJump;
             } else {
-                Pop();
+                stack.Pop();
             }
             DISPATCH();
         }
 
         CASE(JUMP_IF_TRUE_OR_POP): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(Peek(0))) {
+            if (IsTruthy(stack.Peek(0))) {
                 frame->ip += numBytesToJump;
             } else {
-                Pop();
+                stack.Pop();
             }
             DISPATCH();
         }
 
         CASE(POP_JUMP_IF_FALSE): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(Pop())) {
+            if (IsFalsy(stack.Pop())) {
                 frame->ip += numBytesToJump;
             }
 
@@ -663,7 +735,7 @@ void VMCore::Run() {
 
         CASE(POP_JUMP_IF_TRUE): {
             std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(Pop())) {
+            if (IsTruthy(stack.Pop())) {
                 frame->ip += numBytesToJump;
             }
 
@@ -679,9 +751,9 @@ void VMCore::Run() {
         CASE(COUNT_PREP): {
             std::uint16_t jumpToEnd = READ_SHORT();
 
-            Value start = Peek(2);
-            Value stop = Peek(1);
-            Value step = Peek(0);
+            Value start = stack.Peek(2);
+            Value stop = stack.Peek(1);
+            Value step = stack.Peek(0);
 
             if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
             if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
@@ -714,14 +786,14 @@ void VMCore::Run() {
                   ^^^^^    ^^^^^    ^^^^^    ^^^^^
                   start    limit     step    stackTop
 
-                ...where Peek(0) = step, Peek(1) = limit, and Peek(2) = start.
+                ...where stack.Peek(0) = step, stack.Peek(1) = limit, and stack.Peek(2) = start.
             */
 
             std::uint16_t jumpToStart = READ_SHORT();
 
-            Value& start = Peek(2);
-            Value& limit = Peek(1);
-            Value& step = Peek(0);
+            Value& start = stack.Peek(2);
+            Value& limit = stack.Peek(1);
+            Value& step = stack.Peek(0);
 
             // COUNT_PREP should've already checked if these were numbers or not.
             // If we still have them as not a number, then we should assert.
@@ -754,9 +826,9 @@ void VMCore::Run() {
 
             std::uint16_t jumpToEnd = READ_SHORT();
 
-            Value& value = Peek(2);
-            Value& key = Peek(1);
-            Value& iterable = Peek(0);
+            Value& value = stack.Peek(2);
+            Value& key = stack.Peek(1);
+            Value& iterable = stack.Peek(0);
             
             if (iterable.IsObj(ObjType::LIST)) {
                 ObjList* list = iterable.AsObj<ObjList>();
@@ -770,7 +842,7 @@ void VMCore::Run() {
             
             else if (iterable.IsObj(ObjType::DICT)) {
                 ObjDict* dict = iterable.AsObj<ObjDict>();
-                Value& probingIndex = Peek(3);
+                Value& probingIndex = stack.Peek(3);
                 if (!probingIndex.IsNumber()) probingIndex = 0;
 
                 std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
@@ -806,9 +878,9 @@ void VMCore::Run() {
 
             std::uint16_t jumpToStart = READ_SHORT();
 
-            Value& value = Peek(2);
-            Value& key = Peek(1);
-            Value& iterable = Peek(0);
+            Value& value = stack.Peek(2);
+            Value& key = stack.Peek(1);
+            Value& iterable = stack.Peek(0);
 
             if (iterable.IsObj(ObjType::LIST)) {
                 ObjList* list = iterable.AsObj<ObjList>();
@@ -825,7 +897,7 @@ void VMCore::Run() {
 
             else if (iterable.IsObj(ObjType::DICT)) {
                 ObjDict* dict = iterable.AsObj<ObjDict>();
-                Value& probingIndex = Peek(3);
+                Value& probingIndex = stack.Peek(3);
                 ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
 
                 std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
@@ -855,20 +927,20 @@ void VMCore::Run() {
         }
         
         CASE(POP): {
-            Pop();
+            stack.Pop();
             DISPATCH();
         }
 
         CASE(DUPLICATE): {
-            Push(Peek(0));
+            stack.Push(stack.Peek(0));
             DISPATCH();
         }
 
         CASE(COPY): {
-            Value value = Peek(0);
+            Value value = stack.Peek(0);
             Value copy = Deepcopy(value);
-            Pop();
-            Push(copy);
+            stack.Pop();
+            stack.Push(copy);
 
             DISPATCH();
         }
@@ -881,8 +953,8 @@ void VMCore::Run() {
                 is the value on top of the stack.
             */
             ObjString* string = READ_STRING();
-            globals.Set(string, Peek(0));
-            Pop();
+            globals.Set(string, stack.Peek(0));
+            stack.Pop();
 
             DISPATCH();
         }
@@ -895,7 +967,7 @@ void VMCore::Run() {
                 RuntimeError("Undefined variable '%s'.", name->characters);
             }
 
-            Push(*value);
+            stack.Push(*value);
             DISPATCH();
         }
         
@@ -903,7 +975,7 @@ void VMCore::Run() {
             ObjString* name = READ_STRING();
 
             // We assign the name to the value at the top of the stack.
-            Value& value = Peek(0);
+            Value& value = stack.Peek(0);
             bool isNewKey = globals.Set(name, value);
             
             if (isNewKey) {
@@ -916,35 +988,35 @@ void VMCore::Run() {
 
         CASE(GET_LOCAL): {
             std::uint8_t slot = READ_BYTE();
-            Push(frame->slots[slot]);
+            stack.Push(frame->slots[slot]);
 
             DISPATCH();
         }
 
         CASE(SET_LOCAL): {
             std::uint8_t slot = READ_BYTE();
-            frame->slots[slot] = Peek(0);
+            frame->slots[slot] = stack.Peek(0);
             
             DISPATCH();
         }
 
         CASE(GET_UPVALUE): {
             std::uint8_t slot = READ_BYTE();
-            Push(*frame->closure->upvalues[slot]->location);
+            stack.Push(*frame->closure->upvalues[slot]->location);
 
             DISPATCH();
         }
 
         CASE(SET_UPVALUE): {
             std::uint8_t slot = READ_BYTE();
-            *frame->closure->upvalues[slot]->location = Peek(0);
+            *frame->closure->upvalues[slot]->location = stack.Peek(0);
 
             DISPATCH();
         }
 
         CASE(CLOSE_UPVALUE): {
-            CloseUpvalues(stackTop - 1);
-            Pop();
+            CloseUpvalues(stack.top - 1);
+            stack.Pop();
 
             DISPATCH();
         }
@@ -953,7 +1025,7 @@ void VMCore::Run() {
             std::uint8_t argCount = READ_BYTE();
             
             // Attempt to call the callee, whether it is of any value type.
-            CallValue(Peek(argCount), argCount, 0b0);
+            CallValue(stack.Peek(argCount), argCount, 0b0);
             
             DISPATCH();
         }
@@ -962,14 +1034,14 @@ void VMCore::Run() {
             std::uint8_t argCount = READ_BYTE();
             std::uint8_t shared = READ_BYTE();
 
-            CallValue(Peek(argCount), argCount, shared);
+            CallValue(stack.Peek(argCount), argCount, shared);
             
             DISPATCH();
         }
 
         CASE(SELF): {
             ObjString* methodName = READ_STRING();
-            Value object = Pop();
+            Value object = stack.Pop();
             ObjThing* thing = nullptr;
 
             if (object.IsObj(ObjType::THING)) {
@@ -987,8 +1059,8 @@ void VMCore::Run() {
             }
 
             Value value = thing->Get(methodName);
-            Push(value);
-            Push(object);
+            stack.Push(value);
+            stack.Push(object);
 
             DISPATCH();
         }
@@ -996,7 +1068,7 @@ void VMCore::Run() {
         CASE(CLOSURE): {
             ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
             ObjClosure* closure = ObjClosure::New(*this, function);
-            Push(closure);
+            stack.Push(closure);
 
             for (std::size_t i = 0; i < closure->upvalueCount; i++) {
                 std::uint8_t isLocal = READ_BYTE();
@@ -1005,7 +1077,7 @@ void VMCore::Run() {
                 // When we emitted OP_CLOSURE, we were done parsing
                 // a function declaration. Now, the current function is
                 // the SURROUNDING function of that declaration, so we can
-                // read the upvalue right from the current call frame to grab
+                // read the upvalue right from the current ``call frame to grab
                 // it from the enclosing function.
                 if (isLocal) {
                     closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
@@ -1019,65 +1091,65 @@ void VMCore::Run() {
         
         CASE(LIST): {
             ObjList* newList = ObjList::New(*this);
-            Push(newList);
+            stack.Push(newList);
 
             DISPATCH();
         }
 
         CASE(DICT): {
             ObjDict* newDict = ObjDict::New(*this);
-            Push(newDict);
+            stack.Push(newDict);
 
             DISPATCH();
         }
 
         CASE(THING): {
             ObjThing* newThing = ObjThing::New(*this);
-            Push(newThing);
+            stack.Push(newThing);
 
             DISPATCH();
         }
 
         CASE(APPEND): {
-            ObjList* list = Peek(1).AsObj<ObjList>();
-            list->Append(Pop());
+            ObjList* list = stack.Peek(1).AsObj<ObjList>();
+            list->Append(stack.Pop());
             
             DISPATCH();
         }
 
         CASE(DEFINE_ENTRY): {
-            ObjDict* dictionary = Peek(2).AsObj<ObjDict>();
-            Value key = Peek(1);
-            Value value = Peek(0);
+            ObjDict* dictionary = stack.Peek(2).AsObj<ObjDict>();
+            Value key = stack.Peek(1);
+            Value value = stack.Peek(0);
 
             dictionary->Set(key, value);
 
-            Pop();
-            Pop();
+            stack.Pop();
+            stack.Pop();
 
             DISPATCH();
         }
 
         CASE(GET_INDEX): {
-            //    Peek(1)     Peek(0)
+            //    stack.Peek(1)     stack.Peek(0)
             // [ collection ][ index ]
             //                 ^^^^^ stackTop. You are here.
-            Value& collection = Peek(1);
+            Value& collection = stack.Peek(1);
             if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
+                RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
             }
             
             switch (collection.AsObj()->type) {
                 case ObjType::LIST: {
-                    if (!Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
+                    if (!stack.Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
                     
                     ObjList* list = collection.AsObj<ObjList>();
-                    int index = Pop().AsInteger();
+                    int index = stack.Pop().AsInteger();
                     index = ClampIndex(index, list->items.Count());
                     
                     Value value = list->Get(index);
-                    Pop(); // Collection
-                    Push(value);
+                    stack.Pop(); // Collection
+                    stack.Push(value);
 
                     break;
                 }
@@ -1085,13 +1157,13 @@ void VMCore::Run() {
                 case ObjType::DICT: {
                     ObjDict* dict = collection.AsObj<ObjDict>();
 
-                    Value key = Peek(0);
+                    Value key = stack.Peek(0);
                     Value value = dict->Get(key);
 
-                    Pop(); // Key
-                    Pop(); // Collection
+                    stack.Pop(); // Key
+                    stack.Pop(); // Collection
                     
-                    Push(value);
+                    stack.Push(value);
 
                     break;
                 }
@@ -1101,24 +1173,24 @@ void VMCore::Run() {
         }
         
         CASE(SET_INDEX): {
-            //     Peek(2)    Peek(1)    Peek(0)
+            //     stack.Peek(2)    stack.Peek(1)    stack.Peek(0)
             // [ collection ][ index ][ newValue ]
             //                                    ^^^^^^ stackTop. You are here.
-            Value& collection = Peek(2);
+            Value& collection = stack.Peek(2);
             if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                RuntimeError("Value of type '%s' is not indexable.", Peek(2).StringType());
+                RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
             }
 
-            Value newValue = Peek(0);
+            Value newValue = stack.Peek(0);
 
             switch (collection.AsObj()->type) {
                 case ObjType::LIST: {
                     // Lists must always have integers as indices.
-                    if (!Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
+                    if (!stack.Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
                     
                     ObjList* list = collection.AsObj<ObjList>();
 
-                    int index = Peek(1).AsInteger();
+                    int index = stack.Peek(1).AsInteger();
                     index = ClampIndex(index, list->items.Count());
                     list->Set(index, newValue); 
 
@@ -1133,7 +1205,7 @@ void VMCore::Run() {
                     // (i.e. a["hello"] <- nil removes the "hello" key as well, and
                     // won't be counted in loops.)
 
-                    Value key = Peek(1);
+                    Value key = stack.Peek(1);
                     if (newValue.IsNil()) {
                         dictionary->Delete(key);
                     } else {
@@ -1144,11 +1216,11 @@ void VMCore::Run() {
                 }
             }
 
-            Pop(); // New value
-            Pop(); // Index
-            Pop(); // Collection
+            stack.Pop(); // New value
+            stack.Pop(); // Index
+            stack.Pop(); // Collection
 
-            Push(newValue);
+            stack.Push(newValue);
 
             DISPATCH();
         }
@@ -1156,20 +1228,20 @@ void VMCore::Run() {
         CASE(GET_ATTRIBUTE): {
             ObjString* attributeName = READ_STRING();
 
-            if (Peek(0).IsObj(ObjType::THING)) {
-                ObjThing* thing = Peek(0).AsObj<ObjThing>();
+            if (stack.Peek(0).IsObj(ObjType::THING)) {
+                ObjThing* thing = stack.Peek(0).AsObj<ObjThing>();
                 Value value = thing->Get(attributeName);
-                Pop(); // Thing
-                Push(value);
+                stack.Pop(); // Thing
+                stack.Push(value);
 
                 DISPATCH();
             }
 
-            ObjThing* proto = GetProtoOf(Peek(0));
+            ObjThing* proto = GetProtoOf(stack.Peek(0));
             if (proto && !proto->Get(attributeName).IsNil()) {
                 Value value = proto->Get(attributeName);
-                Pop();
-                Push(value);
+                stack.Pop();
+                stack.Push(value);
 
                 DISPATCH();
             }
@@ -1177,7 +1249,7 @@ void VMCore::Run() {
             RuntimeError(
                 "Attribute '%s' does not exist in value of type '%s'.", 
                 attributeName->characters, 
-                Peek(0).StringType()
+                stack.Peek(0).StringType()
             );
 
             DISPATCH();
@@ -1187,11 +1259,11 @@ void VMCore::Run() {
             // [ <thing> ][ 5 ]
             //   ^^^^^^^   ^^^   ^^^^^^
             //   object   value  stackTop
-            //   Peek(1)  Peek(0)
+            //   stack.Peek(1)  stack.Peek(0)
 
             ObjString* attributeName = READ_STRING();
-            Value object = Peek(1);
-            Value value = Peek(0);
+            Value object = stack.Peek(1);
+            Value value = stack.Peek(0);
 
             if (!object.IsObj(ObjType::THING)) {
                 RuntimeError(
@@ -1204,27 +1276,26 @@ void VMCore::Run() {
             ObjThing* thing = object.AsObj<ObjThing>();
             thing->Set(attributeName, value);
 
-            Pop();
-            Pop();
-            Push(value); // Push the value back since assignments leave the value on the stack.
+            stack.Pop();
+            stack.Pop();
+            stack.Push(value); // Push the value back since assignments leave the value on the stack.
 
             DISPATCH();
         }
         
         CASE(PRINT): {
-            Value::Print(Pop());
+            Value::Print(stack.Pop());
             std::printf("\n");
             
             DISPATCH();
         }
 
         CASE(RETURN): {
-            Value result = Pop();
+            Value result = stack.Pop();
             CloseUpvalues(frame->slots);
 
-            frameCount--;
-            stackTop = frame->slots;
-            Push(result);
+            stack.RemoveFrame();
+            stack.Push(result);
 
             return;
         }
@@ -1263,32 +1334,7 @@ VM::~VM() = default;
  * the result back.
  */
 bool VM::Interpret(std::string_view source) {
-    Compiler compiler{ *core };
-
-    try {
-        ObjFunction* function = compiler.Compile(source.data());
-
-        core->Push(Value(function));
-        ObjClosure* closure = ObjClosure::New(*core, function);
-        core->Pop();
-        core->Push(closure);
-        core->Call(closure, 0);
-
-        // Pop the return value. During the REPL, the last OP_RETURN
-        // started to push the 'nil' value onto the very bottom of the
-        // stack, causing a bunch of 'nil' values to accumulate at the bottom. 
-        core->Pop();
-
-    } catch (LugError error) {
-        core->lastError = error;
-        
-        //! Not the best way right now to handle errors. Ideally the user'd like the stack to
-        // rewind to how it was, but this is a good temporary fix.
-        core->ResetStack();
-        return false;
-    }
-
-    return true;
+    return core->Interpret(source);
 }
 
 

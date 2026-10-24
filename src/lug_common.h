@@ -23,6 +23,9 @@
     #define LUG_DEBUG_TRACE_EXECUTION
     #define LUG_DEBUG_PRINT_CODE
 
+    // #define LUG_DEBUG_LOG_GC
+    // #define LUG_DEBUG_STRESS_GC
+
     #define ASSERT(condition, message)                                                  \
         do                                                                              \
         {                                                                               \

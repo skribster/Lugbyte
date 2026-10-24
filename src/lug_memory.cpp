@@ -3,9 +3,27 @@
 #include "lug_memory.h"
 #include "lug_vm.h"
 
+#ifdef LUG_DEBUG_LOG_GC
+#include <cstdio>
+#include "lug_debug.h"
+#endif
+
 namespace Luggage::Memory {
 
 void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t newSize) {
+    GC& gc = vm.gc;
+    gc.bytesAllocated += newSize - oldSize;
+    
+    if (newSize > oldSize) {
+        #ifdef LUG_DEBUG_STRESS_GC
+        vm.CollectGarbage();
+        #endif
+    }
+
+    if (newSize > oldSize && gc.bytesAllocated > gc.nextGC) {
+        gc.Collect();
+    }
+
     if (newSize == 0) {
         std::free(pointer);
         return nullptr;
@@ -20,24 +38,6 @@ void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t new
     }
     
     return resized;
-}
-
-static void FreeObject(VMCore& vm, Obj* obj) {
-    // Store the size before we call the destructor
-    // since the destructor might modify the size or other members of the object...
-    std::size_t size = obj->size; 
-    obj->~Obj();
-    Reallocate(vm, obj, size, 0);
-}
-
-
-void FreeObjects(VMCore& vm) {
-    Obj* object = vm.objects;
-    while (object != nullptr) {
-        Obj* next = object->next;
-        FreeObject(vm, object);
-        object = next;
-    }
 }
 
 }

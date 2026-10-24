@@ -36,6 +36,7 @@ struct Obj {
     std::uint32_t hash;
     Obj* next{ nullptr };       // Points to the next Obj in the Obj linked list.
     std::size_t size{ 0 };      // Size of the Obj.
+    bool isMarked{ false };
 };
 
 // ObjString -----------------

@@ -29,6 +29,15 @@ static T* AllocateObject(VMCore& vm) {
     object->size = sizeof(T);
     vm.AddObject(object);
 
+#ifdef LUG_DEBUG_LOG_GC
+    std::printf(
+        "%p allocate %zu for %s\n", 
+        static_cast<void*>(object), 
+        object->size, 
+        Obj::StringType(object->type)
+    );
+#endif
+
     return object;
 }
 
@@ -59,7 +68,7 @@ static std::uint32_t HashPointer(void* pointer) {
 // Obj methods ------------------------------------
 
 void Obj::Print() {
-    std::printf("Unknown object");
+    std::printf("Unknown object type '%d'\n", static_cast<int>(type));
     UNREACHABLE();
 }
 
@@ -88,10 +97,14 @@ const char* Obj::StringType(ObjType type) {
 
         // These are behind-the-scenes objects that
         // the user probably can't access.
-        case ObjType::FUNCTION: 
-        default:
-            std::printf("objtype: %d\n", (int)type);
+        case ObjType::FUNCTION: {
+            return "FUNCTION_IMPL";
+        }
+
+        default: {
+            std::printf("Unknown object type '%d'\n", static_cast<int>(type));
             UNREACHABLE();
+        }
     }
 }
 
@@ -108,8 +121,17 @@ static ObjString* AllocateString(VMCore& vm, char* characters, std::size_t lengt
     string->characters = characters;
     string->hash = hash;
 
+    // When we set the string with vm.strings.Set, there's
+    // a possibility that it might trigger a GC. We should push
+    // the string on the stack so that in the case that it does,
+    // the string isn't collected.
+    vm.stack.Push(string);
+
     // Add the string to the vm's interned string table
     vm.strings.Set(string, Value::Nil());
+
+    // Then pop it off once we're done.
+    vm.stack.Pop();
 
     return string;
 }
@@ -466,8 +488,9 @@ void ObjThing::Set(Value attribute, Value value) {
 
 void ObjThing::Set(const char* attribute, Value value) {
     ObjString* attributeName = ObjString::FromLiteral(vm, attribute);
+    vm.stack.Push(attributeName);
     Set(attributeName, value);
+    vm.stack.Pop();
 }
-
 
 }
