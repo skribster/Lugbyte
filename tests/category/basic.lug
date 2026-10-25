@@ -1,0 +1,15 @@
+box Fruit <- category 
+    BANANA,
+    APPLE,
+    ORANGE,
+    STRAWBERRY,
+    BLUEBERRY,
+    MANGO
+end
+
+print(Fruit.BANANA)     // expect: 0
+print(Fruit.APPLE)      // expect: 1
+print(Fruit.ORANGE)     // expect: 2
+print(Fruit.STRAWBERRY) // expect: 3
+print(Fruit.BLUEBERRY)  // expect: 4
+print(Fruit.MANGO)      // expect: 5

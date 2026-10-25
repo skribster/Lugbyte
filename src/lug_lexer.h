@@ -44,6 +44,7 @@ enum class TokenType {
     BOX,
     BREAK,
     BY,
+    CATEGORY,
     CONTINUE,
     COUNT,
     DO,

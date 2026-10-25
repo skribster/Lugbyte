@@ -59,6 +59,8 @@
     OPCODE(LIST)                    \
     OPCODE(DICT)                    \
     OPCODE(THING)                   \
+    OPCODE(CATEGORY)                \
+                                    \
     OPCODE(APPEND)                  \
     OPCODE(DEFINE_ENTRY)            \
     OPCODE(GET_INDEX)               \

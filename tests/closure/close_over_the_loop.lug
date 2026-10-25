@@ -1,0 +1,7 @@
+box closures <- []
+count i from 1...2 do
+  closures:append(function() print(i) end)
+end
+
+closures[0]() // expect: 3
+closures[1]() // expect: 3

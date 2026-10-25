@@ -48,7 +48,8 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
     std::cerr << error.message << '\n';
 
     if (error.type == Luggage::ErrorType::COMPILE) exit(65);
-    if (error.type == Luggage::ErrorType::RUNTIME) exit(70); 
+    if (error.type == Luggage::ErrorType::RUNTIME) exit(70);
+    if (error.type == Luggage::ErrorType::MEMORY) exit(1); 
 }
 
 

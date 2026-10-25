@@ -1,0 +1,10 @@
+box Fruit <- category 
+    BANANA,
+    APPLE,
+    ORANGE,
+    STRAWBERRY,
+    BLUEBERRY,
+    MANGO
+end
+
+print(Fruit.WATERMELON)      // expect: Type 'WATERMELON' does not exist in category

@@ -156,6 +156,7 @@ private:
     void EmitConstant(Value value);
     std::uint8_t MakeConstant(Value value);
     std::uint8_t IdentifierConstant(Token& identifier);
+    void EmitIdentifier(Token& identifier);
 
     std::size_t EmitJump(OpCode::Type instruction);
     void PatchJump(std::size_t instructionOffset);
@@ -218,6 +219,7 @@ private:
     void List(bool canAssign);
     void Dictionary(bool canAssign);
     void Thing(bool canAssign);
+    void Category(bool canAssign);
     void Variable(bool canAssign);
     void NamedVariable(Token& name, bool canAssign);
 

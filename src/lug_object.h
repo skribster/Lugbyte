@@ -21,6 +21,7 @@ enum class ObjType {
     LIST,
     DICT,
     THING,
+    CATEGORY,
 };
 
 
@@ -142,8 +143,9 @@ struct ObjList : Obj {
     Vector<Value> items;
 
     void Append(Value value);
-    const Value& Get(int index) const;
+    const Value* Get(int index) const;
     void Set(int index, Value value);
+    int ClampIndex(int index) const;
 
     Vector<Value>::Iterator begin() { return items.begin(); }
     Vector<Value>::Iterator end() { return items.end(); }
@@ -164,7 +166,7 @@ struct ObjDict : Obj {
 
     Table entries;
 
-    Value Get(const Value& key) const;
+    const Value* Get(const Value& key) const;
     void Set(Value key, Value value);
     void Delete(Value key);
 
@@ -186,16 +188,35 @@ struct ObjThing : Obj {
 
     Table attributes;
     
-    Value Get(Value attribute) const;
-    Value Get(const char* attribute) const;
-    void Set(Value attribute, Value value);
+    const Value* Get(ObjString* attribute) const;
+    const Value* Get(const char* attribute) const;
+    void Set(ObjString* attribute, Value value);
     // Small shortcut for setting a string field.
     void Set(const char* attribute, Value value);
+    void Delete(Value attribute);
 
     Table::Iterator begin() { return attributes.begin(); }
     Table::Iterator end()   { return attributes.end(); }
 
     static ObjThing* New(VMCore& vm);
+};
+
+// ObjCategory -----------------
+
+struct ObjCategory : Obj {
+    explicit ObjCategory(VMCore& vm)
+        : Obj(vm, ObjType::CATEGORY), types(vm)
+    {}
+
+    ~ObjCategory() override;
+    void Print() override;
+    void AddType(ObjString* typeName, Value& index);
+    const Value* GetType(ObjString* typeName);
+    
+    Table types;
+    int currentIndex{ 0 };
+    
+    static ObjCategory* New(VMCore& vm);
 };
 
 }

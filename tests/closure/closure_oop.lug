@@ -1,0 +1,22 @@
+box Person <- function(name, age, secret)
+    box person <- thing
+
+    person.name <- name
+    person.age <- age
+
+    person.birthday <- function()
+        person.age <- person.age + 1
+        print(person.name, "is turning", person.age, "years old!")
+    end
+
+    person.tellSecret <- function()
+        print(person.name, secret)
+    end
+    
+    return person
+end
+
+
+box person <- Person("John", 25, "loves mint chocolate")
+person.birthday() // expect: John is turning 26 years old!
+person.tellSecret() // expect: John loves mint chocolate

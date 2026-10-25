@@ -6,6 +6,8 @@
 
 namespace Luggage::Lib {
     
+// List methods ---------------------------------
+
 namespace List {
     static Value Append(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 2);
@@ -64,8 +66,28 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
     return static_cast<int>(list->items.Count());
 }
 
+
+static Value Get(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 2);
+    CheckType(vm, args[0], ObjType::LIST);
+    CheckType(vm, args[1], ValueType::NUMBER);
+
+    ObjList* list = args[0].AsObj<ObjList>();   
+    if (!args[1].IsInteger()) {
+        vm.RuntimeError("Expected an integer for the index.");
+    }
+
+    int index = args[1].AsInteger();
+    const Value* value = list->Get(index);
+
+    if (value == nullptr) return Value::Nil();
+
+    return *value;
 }
 
+}
+
+// Dictionary methods ---------------------------
 
 namespace Dict {
 
@@ -92,6 +114,20 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
     return static_cast<int>(dict->entries.count);
 }
 
+
+static Value Get(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 2);
+    CheckType(vm, args[0], ObjType::DICT);
+
+    ObjDict* dict = args[0].AsObj<ObjDict>();
+    Value key = args[1];
+    const Value* value = dict->Get(key);
+
+    if (value == nullptr) return Value::Nil();
+
+    return *value;
+}
+
 }
 
 // Library out ------------------------------
@@ -100,13 +136,15 @@ static constexpr NativeEntry listLib[] = {
     { "append",     &List::Append },
     { "clone",      &List::Clone },
     { "sum",        &List::Sum },
-    { "length",        &List::Length },
+    { "length",     &List::Length },
+    { "get",        &List::Get }
 };
 
 
 static constexpr NativeEntry dictLib[] = {
     { "clear",      &Dict::Clear },
-    { "length",     &Dict::Length }
+    { "length",     &Dict::Length },
+    { "get",        &Dict::Get }
 };
 
 

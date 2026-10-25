@@ -1,0 +1,25 @@
+box PlayerState <- category
+    IDLE,
+    WALK,
+    RUN,
+    MIDAIR,
+    DASH
+end
+
+box state <- PlayerState.RUN // expect: Player is moving.
+
+inspect state
+    when PlayerState.IDLE do
+        print("Player is not moving.")
+    end
+
+    when PlayerState.WALK
+    when PlayerState.RUN
+    when PlayerState.DASH do
+        print("Player is moving.")
+    end
+
+    when PlayerState.MIDAIR do
+        print("Player is midair.")
+    end
+end

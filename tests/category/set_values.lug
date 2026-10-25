@@ -1,0 +1,21 @@
+box Level <- category
+    LOW <- 10,
+    LOW_2,
+    LOW_3,
+    MEDIUM <- 20,
+    MEDIUM_2,
+    MEDIUM_3,
+    HIGH <- 30,
+    HIGH_2,
+    HIGH_3
+end
+
+print(Level.LOW)        // expect: 10
+print(Level.LOW_2)      // expect: 11
+print(Level.LOW_3)      // expect: 12
+print(Level.MEDIUM)     // expect: 20
+print(Level.MEDIUM_2)   // expect: 21
+print(Level.MEDIUM_3)   // expect: 22
+print(Level.HIGH)       // expect: 30
+print(Level.HIGH_2)     // expect: 31
+print(Level.HIGH_3)     // expect: 32

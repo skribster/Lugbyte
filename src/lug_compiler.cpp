@@ -391,6 +391,11 @@ std::uint8_t Compiler::IdentifierConstant(Token& identifier) {
     return MakeConstant(string);
 }
 
+void Compiler::EmitIdentifier(Token& identifier) {
+    ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
+    EmitConstant(string);
+}
+
 /**
  * Takes the next token (presumed identifier) and 
  * parses it as a variable name.
@@ -1120,6 +1125,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // BOX
     { nullptr,                  nullptr,                Precedence::NONE },             // BREAK
     { nullptr,                  nullptr,                Precedence::NONE },             // BY
+    { &Compiler::Category,      nullptr,                Precedence::NONE },             // CATEGORY
     { nullptr,                  nullptr,                Precedence::NONE },             // CONTINUE
     { nullptr,                  nullptr,                Precedence::NONE },             // COUNT
     { nullptr,                  nullptr,                Precedence::NONE },             // DO
@@ -1616,7 +1622,12 @@ void Compiler::Dictionary(bool canAssign) {
                 // don't know which '<-' denotes the key-value separation.
                 StoredExpression();
                 parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after key.");
+
+            } else if (parser.Match(TokenType::IDENTIFIER)) { 
+                EmitIdentifier(parser.previous);
+
             } else {
+
                 // Otherwise, if we don't have a square bracket we can just parse primary.
                 ParsePrecedence(Precedence::PRIMARY);
             }
@@ -1647,6 +1658,65 @@ void Compiler::Thing(bool canAssign) {
         EmitBytes(OpCode::SET_ATTRIBUTE, protoConstant);
         EmitByte(OpCode::POP);
     }
+
+    if (parser.Match(TokenType::LEFT_BRACE)) {
+        if (!parser.Match(TokenType::RIGHT_BRACE)) {
+            do {
+                EmitByte(OpCode::DUPLICATE);
+                parser.Consume(TokenType::IDENTIFIER, "Expected attribute name.");
+                std::uint8_t attributeName = IdentifierConstant(parser.previous);
+
+                parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after attribute name.");
+
+                StoredExpression();
+
+                EmitBytes(OpCode::SET_ATTRIBUTE, attributeName);
+                EmitByte(OpCode::POP);
+            } while (parser.Match(TokenType::COMMA));
+
+            parser.Consume(TokenType::RIGHT_BRACE, "Expected '}' after initializers.");
+        }
+    }
+}
+
+
+/**
+ * Parses a category expression.
+ * e.g.
+ * box Color <- category 
+ *      RED,
+ *      ORANGE,
+ *      YELLOW,
+ *      GREEN,
+ *      BLUE,
+ *      INDIGO,
+ *      VIOLET  
+ * end
+ */
+void Compiler::Category(bool canAssign) {
+    EmitByte(OpCode::CATEGORY);
+
+    if (!parser.Match(TokenType::END)) {
+        EmitByte(OpCode::DUPLICATE);
+        do {
+            parser.Consume(TokenType::IDENTIFIER, "Expected category kind.");
+            std::uint8_t type = IdentifierConstant(parser.previous);
+            
+            // Optional assignment
+            if (parser.Match(TokenType::LEFT_ARROW)) {
+                StoredExpression();
+            } else {
+                EmitByte(OpCode::NIL);
+            }
+
+            EmitBytes(OpCode::SET_ATTRIBUTE, type);
+            
+        } while (parser.Match(TokenType::COMMA));
+        
+        parser.Consume(TokenType::END, "Expected 'end' after category kinds.");
+        EmitByte(OpCode::POP);
+    }
+
 }
 
 

@@ -312,6 +312,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return simpleInstruction("OP_THING", offset);
         }
 
+        case OpCode::CATEGORY: {
+            return simpleInstruction("OP_CATEGORY", offset);
+        }
+
         case OpCode::APPEND: {
             return simpleInstruction("OP_APPEND", offset);
         }

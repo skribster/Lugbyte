@@ -1,0 +1,7 @@
+box cipher <- {
+    a <- 1,
+    b <- 2,
+    c <- 3
+}
+
+print(cipher["d"]) // expect: Could not find key in dictionary

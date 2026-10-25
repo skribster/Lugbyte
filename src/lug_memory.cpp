@@ -21,7 +21,7 @@ void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t new
     }
 
     if (newSize > oldSize && gc.bytesAllocated > gc.nextGC) {
-        gc.Collect();
+        vm.CollectGarbage();
     }
 
     if (newSize == 0) {

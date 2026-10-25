@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <type_traits>
 #include "lug_vector.h"
 
 namespace Luggage {
@@ -32,6 +33,14 @@ public:
     Value(int number) : type(ValueType::NUMBER)             { as.number = static_cast<double>(number); }
     Value(bool boolean) : type(ValueType::BOOLEAN)          { as.boolean = boolean; }
     Value(Obj* obj) : type(ValueType::OBJ)                  { as.obj = static_cast<Obj*>(obj); }
+
+    /*
+        This makes it so that Value can accept object pointers (including
+        pointers whose class inherits Obj, aka ObjString, ObjFunction, etc.)
+        but not any other pointer.
+    */
+    template <typename T, typename = std::enable_if_t<!std::is_base_of_v<Obj, T>>>
+    Value(T* anyOtherPointer) = delete;
 
     // Named singleton constructors
     inline static Value Nil()           { return Value(ValueType::NIL); }

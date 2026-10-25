@@ -40,6 +40,7 @@ static Keyword keywords[] = {
 	{"box",			3,	TokenType::BOX},
 	{"break",		5,	TokenType::BREAK},
 	{"by",			2,	TokenType::BY},
+    {"category",	8,	TokenType::CATEGORY},
     {"continue",	8,	TokenType::CONTINUE},
 	{"count",		5,	TokenType::COUNT},
 	{"do",			2,	TokenType::DO},

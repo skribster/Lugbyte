@@ -119,6 +119,7 @@ private:
     void Run();
     
     LugError lastError;
+    LugError memoryError;
 
     friend class VM;
 };

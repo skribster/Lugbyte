@@ -75,36 +75,26 @@ void Obj::Print() {
 
 const char* Obj::StringType(ObjType type) {
     switch (type) {
-        case ObjType::STRING:       
-            return "string";
+        case ObjType::STRING:   return "string";
 
-        case ObjType::NATIVE:
-        case ObjType::CLOSURE:     
+        case ObjType::NATIVE:   
+        case ObjType::CLOSURE:  
             return "function";
 
-        case ObjType::LIST:         
-            return "list";
-
-        case ObjType::DICT:   
-            return "dict";
-
-        case ObjType::UPVALUE:      
-            return "upvalue";
-
-        case ObjType::THING: {
-            return "thing";
-        }
+        case ObjType::LIST:     return "list";
+        case ObjType::DICT:     return "dict";
+        case ObjType::THING:    return "thing";
+        case ObjType::CATEGORY: return "category";
+        case ObjType::UPVALUE:  return "upvalue";
 
         // These are behind-the-scenes objects that
         // the user probably can't access.
-        case ObjType::FUNCTION: {
-            return "FUNCTION_IMPL";
-        }
+        case ObjType::FUNCTION: return "FUNCTION_IMPL";
 
-        default: {
+        default: 
             std::printf("Unknown object type '%d'\n", static_cast<int>(type));
             UNREACHABLE();
-        }
+        
     }
 }
 
@@ -349,6 +339,7 @@ void ObjNative::Print() {
 
 // ObjList methods ------------------------------------
 
+
 ObjList::~ObjList() {
     
 }
@@ -377,12 +368,34 @@ void ObjList::Append(Value value) {
 }
 
 
-const Value& ObjList::Get(int index) const {
-    return items[index];
+const Value* ObjList::Get(int index) const {
+    index = ClampIndex(index);
+    if (index == -1) return nullptr;
+
+    return &items[index];
+}
+
+
+int ObjList::ClampIndex(int index) const {
+    int numItems = static_cast<int>(items.Count());
+
+    // This handles the wrap-around case for negative numbers.
+    if (index < 0) {
+        return ((index % numItems) + numItems) % numItems; 
+    }
+
+    // -1 because itemCount starts at 1, while indices start at 0
+    if (index > numItems - 1) {
+        return -1;
+    }
+
+    return index;
 }
 
 
 void ObjList::Set(int index, Value value) {
+    index = ClampIndex(index);
+    if (index == -1) vm.RuntimeError("Index '%d' out of range.", index);
     items[index] = value;
 }
 
@@ -423,11 +436,8 @@ void ObjDict::Print() {
 }
 
 
-Value ObjDict::Get(const Value& key) const {
-    Value* value = entries.Get(key);
-
-    if (value == nullptr) return Value::Nil();
-    return *value;
+const Value* ObjDict::Get(const Value& key) const {
+    return entries.Get(key);
 }
 
 
@@ -460,15 +470,15 @@ void ObjThing::Print() {
 }
 
 
-Value ObjThing::Get(Value attribute) const {
+const Value* ObjThing::Get(ObjString* attribute) const {
     Value* value = attributes.Get(attribute);
     if (value != nullptr) {
-        return *value;
+        return value;
     }
 
     Value* protoValue = attributes.Get("__proto__");
     if (protoValue == nullptr || !protoValue->IsObj(ObjType::THING)) {
-        return Value::Nil();
+        return nullptr;
     }
 
     ObjThing* proto = protoValue->AsObj<ObjThing>();
@@ -476,12 +486,12 @@ Value ObjThing::Get(Value attribute) const {
 }   
 
 
-Value ObjThing::Get(const char* attribute) const {
+const Value* ObjThing::Get(const char* attribute) const {
     return Get(ObjString::FromLiteral(vm, attribute));
 }
 
 
-void ObjThing::Set(Value attribute, Value value) {
+void ObjThing::Set(ObjString* attribute, Value value) {
     attributes.Set(attribute, value);
 }
 
@@ -492,5 +502,52 @@ void ObjThing::Set(const char* attribute, Value value) {
     Set(attributeName, value);
     vm.stack.Pop();
 }
+
+
+void ObjThing::Delete(Value attribute) {
+    attributes.Delete(attribute);
+}
+
+// ObjCategory methods ------------------------------------
+
+ObjCategory::~ObjCategory() {
+
+}
+
+
+ObjCategory* ObjCategory::New(VMCore& vm) {
+    ObjCategory* newCategory = AllocateObject<ObjCategory>(vm);
+    return newCategory;
+}
+
+
+void ObjCategory::Print() {
+    std::printf("<category>");
+}
+
+
+void ObjCategory::AddType(ObjString* typeName, Value& index) {
+    bool isNewType = true;
+    if (index.IsNil()) {
+        isNewType = types.Set(typeName, currentIndex);
+    } else {
+        if (!index.IsInteger()) vm.RuntimeError("Cannot assign a category type as '%s'", index.StringType());
+        
+        isNewType = types.Set(typeName, index);
+        currentIndex = index.AsInteger();
+    }
+
+    if (!isNewType) {
+        vm.RuntimeError("Cannot re-define category type '%s'.", typeName->characters);
+    }
+    
+    currentIndex++;
+}
+
+
+const Value* ObjCategory::GetType(ObjString* typeName) {
+    return types.Get(typeName);
+}
+
 
 }

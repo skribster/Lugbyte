@@ -98,7 +98,7 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
                 Value name = DeepcopyValue(vm, attribute.key, memo);
                 Value v = DeepcopyValue(vm, attribute.value, memo);
 
-                copy->Set(name, v);
+                copy->Set(name.AsObj<ObjString>(), v);
             }
             
             return copy;
@@ -110,33 +110,16 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
 }
 
 
-/**
- * Clamps a list index given the list's number of items.
- * If it's negative, it will wrap around to the end of the list.
- * If the index is larger than the number of items, we'll return
- * -1.
- * Otherwise, keep the list index.
- */
-static int ClampIndex(int index, int numItems) {
-    // This handles the wrap-around case for negative numbers.
-    if (index < 0) {
-        return ((index % numItems) + numItems) % numItems; 
-    }
-
-    // -1 because itemCount starts at 1, while indices start at 0
-    if (index > numItems - 1) {
-        return -1;
-    }
-
-    return index;
-}
-
-
 // VMCore methods -----------------------------------
 
 VMCore::VMCore() 
     : strings(*this), globals(*this), gc(*this), compiler(*this)
 {
+    // We'll initialize the memory LugError at the start of the program
+    // so that we don't have to allocate it later on.
+    memoryError.type = ErrorType::MEMORY;
+    memoryError.message = "Unable to allocate further memory.";
+
     stack.Reset();
 }
 
@@ -161,14 +144,20 @@ bool VMCore::Interpret(std::string_view source) {
         // stack, causing a bunch of 'nil' values to accumulate at the bottom. 
         stack.Pop();
 
-    } catch (LugError error) {
+    } catch (LugError& error) {
         lastError = error;
         
         //! Not the best way right now to handle errors. Ideally the user'd like the stack to
         // rewind to how it was, but this is a good temporary fix.
         stack.Reset();
         return false;
-    }
+
+    } catch (std::bad_alloc& error) {
+        lastError = memoryError;
+        stack.Reset();
+
+        return false;
+    } 
 
     return true;
 }
@@ -221,13 +210,13 @@ ObjString* VMCore::ToString(Value value) {
             case ObjType::THING: {
                 ObjThing* thing = value.AsObj<ObjThing>();
                 
-                Value stringDunder = thing->Get("__tostring__");
-                if (!stringDunder.IsNil()) {
-                    stack.Push(stringDunder);
+                const Value* stringDunder = thing->Get("__tostring__");
+                if (stringDunder != nullptr) {
+                    stack.Push(*stringDunder);
                     stack.Push(thing);
 
                     // We will 'share' the thing.
-                    CallValue(stringDunder, 1, 0b1);
+                    CallValue(*stringDunder, 1, 0b1);
                     Value result = stack.Pop();
                     if (!result.IsObj(ObjType::STRING)) {
                         RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
@@ -405,9 +394,10 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
                 // Check if the 'thing' has a '__call__' dunder 
                 // attached to it.
                 ObjThing* thing = value.AsObj<ObjThing>();
-                Value callDunder = thing->Get("__call__");
+                const Value* callDunder = thing->Get("__call__");
+                if (callDunder == nullptr) break;
                 
-                CallValue(callDunder, argCount, shared);
+                CallValue(*callDunder, argCount, shared);
                 return;
             }
 
@@ -833,7 +823,11 @@ void VMCore::Run() {
             if (iterable.IsObj(ObjType::LIST)) {
                 ObjList* list = iterable.AsObj<ObjList>();
                 if (!key.IsNumber()) key = 0;
-                value = list->Get(key.AsNumber());
+
+                // list->Get may return nullptr if the index is out of range.
+                const Value* listValue = list->Get(key.AsNumber());
+                ASSERT(listValue != nullptr, "The foreach index is out of range.");
+                value = *listValue;
                 
                 if (static_cast<std::size_t>(key.AsInteger()) >= list->items.Count()) {
                     frame->ip += jumpToEnd;
@@ -890,7 +884,12 @@ void VMCore::Run() {
                 // we're done with iterating through the list. Exit out of
                 // the loop.
                 if (key.AsInteger() < list->items.Count()) {
-                    value = list->Get(key.AsInteger());
+                    // In case we screwed something up by letting the index go out of
+                    // range of the list, causing list->Get to return nullptr, we assert
+                    const Value* listValue = list->Get(key.AsNumber());
+                    ASSERT(listValue != nullptr, "The foreach index is out of range.");
+                    value = *listValue;
+
                     frame->ip -= jumpToStart;
                 }
             } 
@@ -1052,14 +1051,14 @@ void VMCore::Run() {
 
             } else {
                 RuntimeError(
-                    "Method '%s' does not exist on value of type '%s'.", 
+                    "Method '%s' does not exist in value of type '%s'.", 
                     methodName->characters, 
                     object.StringType()
                 );
             }
 
-            Value value = thing->Get(methodName);
-            stack.Push(value);
+            const Value* value = thing->Get(methodName);
+            stack.Push(*value);
             stack.Push(object);
 
             DISPATCH();
@@ -1110,6 +1109,13 @@ void VMCore::Run() {
             DISPATCH();
         }
 
+        CASE(CATEGORY): {
+            ObjCategory* newCategory = ObjCategory::New(*this);
+            stack.Push(newCategory);
+
+            DISPATCH();
+        }
+
         CASE(APPEND): {
             ObjList* list = stack.Peek(1).AsObj<ObjList>();
             list->Append(stack.Pop());
@@ -1119,8 +1125,8 @@ void VMCore::Run() {
 
         CASE(DEFINE_ENTRY): {
             ObjDict* dictionary = stack.Peek(2).AsObj<ObjDict>();
-            Value key = stack.Peek(1);
-            Value value = stack.Peek(0);
+            const Value& key = stack.Peek(1);
+            const Value& value = stack.Peek(0);
 
             dictionary->Set(key, value);
 
@@ -1144,12 +1150,14 @@ void VMCore::Run() {
                     if (!stack.Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
                     
                     ObjList* list = collection.AsObj<ObjList>();
-                    int index = stack.Pop().AsInteger();
-                    index = ClampIndex(index, list->items.Count());
-                    
-                    Value value = list->Get(index);
+                    int index = stack.Peek(0).AsInteger();
+                    const Value* value = list->Get(index);
+
+                    stack.Pop(); // Index
                     stack.Pop(); // Collection
-                    stack.Push(value);
+
+                    // Leave only the value of the indexed list.
+                    stack.Push(*value);
 
                     break;
                 }
@@ -1157,13 +1165,17 @@ void VMCore::Run() {
                 case ObjType::DICT: {
                     ObjDict* dict = collection.AsObj<ObjDict>();
 
-                    Value key = stack.Peek(0);
-                    Value value = dict->Get(key);
+                    Value& key = stack.Peek(0);
+                    const Value* value = dict->Get(key);
+                    if (value == nullptr) {
+                        
+                        RuntimeError("Could not find key in dictionary.");
+                    }
 
                     stack.Pop(); // Key
                     stack.Pop(); // Collection
                     
-                    stack.Push(value);
+                    stack.Push(*value);
 
                     break;
                 }
@@ -1189,9 +1201,7 @@ void VMCore::Run() {
                     if (!stack.Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
                     
                     ObjList* list = collection.AsObj<ObjList>();
-
                     int index = stack.Peek(1).AsInteger();
-                    index = ClampIndex(index, list->items.Count());
                     list->Set(index, newValue); 
 
                     break;
@@ -1228,27 +1238,47 @@ void VMCore::Run() {
         CASE(GET_ATTRIBUTE): {
             ObjString* attributeName = READ_STRING();
 
+            if (stack.Peek(0).IsObj(ObjType::CATEGORY)) {
+                ObjCategory* category = stack.Peek(0).AsObj<ObjCategory>();
+                const Value* type = category->GetType(attributeName);
+                if (type == nullptr) {
+                    RuntimeError("Type '%s' does not exist in category.", attributeName->characters);
+                }
+
+                stack.Pop(); // Category
+                stack.Push(*type);
+
+                DISPATCH();
+            }
+
             if (stack.Peek(0).IsObj(ObjType::THING)) {
                 ObjThing* thing = stack.Peek(0).AsObj<ObjThing>();
-                Value value = thing->Get(attributeName);
+                const Value* value = thing->Get(attributeName);
+                if (value == nullptr) {
+                    RuntimeError("Thing has no attribute named '%s'.", attributeName->characters);
+                }
+                
                 stack.Pop(); // Thing
-                stack.Push(value);
+                stack.Push(*value);
 
                 DISPATCH();
             }
 
             ObjThing* proto = GetProtoOf(stack.Peek(0));
-            if (proto && !proto->Get(attributeName).IsNil()) {
-                Value value = proto->Get(attributeName);
+            if (proto && proto->Get(attributeName) != nullptr) {
+                const Value* value = proto->Get(attributeName);
+                if (value == nullptr) {
+                    RuntimeError("Could not find '%s' in value.", attributeName->characters);
+                }
+
                 stack.Pop();
-                stack.Push(value);
+                stack.Push(*value);
 
                 DISPATCH();
             }
             
             RuntimeError(
-                "Attribute '%s' does not exist in value of type '%s'.", 
-                attributeName->characters, 
+                "Type '%s' does not support attributes.", 
                 stack.Peek(0).StringType()
             );
 
@@ -1265,22 +1295,38 @@ void VMCore::Run() {
             Value object = stack.Peek(1);
             Value value = stack.Peek(0);
 
-            if (!object.IsObj(ObjType::THING)) {
-                RuntimeError(
-                    "Attribute '%s' does not exist on value of type '%s'.", 
-                    attributeName->characters, 
-                    object.StringType()
-                );
+            if (object.IsObj(ObjType::THING)) {
+                ObjThing* thing = object.AsObj<ObjThing>();
+                if (value.IsNil()) {
+                    thing->Delete(attributeName);
+                } else {
+                    thing->Set(attributeName, value);
+                }
+
+                stack.Pop();
+                stack.Pop();
+                stack.Push(value); // Push the value back since assignments leave the value on the stack.
+                
+                DISPATCH();
             }
 
-            ObjThing* thing = object.AsObj<ObjThing>();
-            thing->Set(attributeName, value);
+            if (object.IsObj(ObjType::CATEGORY)) {
+                ObjCategory* category = object.AsObj<ObjCategory>();
 
-            stack.Pop();
-            stack.Pop();
-            stack.Push(value); // Push the value back since assignments leave the value on the stack.
+                // Note that we cannot add new kinds after the category literal.
+                // category->AddType will error for us when we try and re-define
+                // an attribute that has already been defined.
+                category->AddType(attributeName, value);
+                stack.Pop();
 
-            DISPATCH();
+                DISPATCH();
+            }
+
+            RuntimeError(
+                "Attribute '%s' does not exist in value of type '%s'.", 
+                attributeName->characters, 
+                stack.Peek(0).StringType()
+            );
         }
         
         CASE(PRINT): {

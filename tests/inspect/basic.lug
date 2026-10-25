@@ -1,0 +1,23 @@
+box inspectPerson <- function(person)
+    inspect person
+        when "Jane" 
+        when "Mary"
+        when "Bob" do
+            print("Hello friend", person)
+        end
+
+        when "Jack" do
+            print("Hello best friend", person)
+        end
+
+        else 
+            print("Hello", person)
+        end
+    end
+end
+
+inspectPerson("Jane")   // expect: "Hello friend Jane"
+inspectPerson("Mary")   // expect: "Hello friend Mary"
+inspectPerson("Bob")    // expect: "Hello friend Bob"
+inspectPerson("Jack")   // expect: "Hello best friend Jack"
+inspectPerson("John")   // expect: "Hello John"
