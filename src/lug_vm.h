@@ -78,10 +78,9 @@ struct Stack {
 
 
 class VMCore {
-    public:
+public:
     VMCore();
-    ~VMCore();
-    
+  
     bool Interpret(std::string_view source);
 
     void DefineNative(const char* name, NativeFn function);
@@ -105,7 +104,6 @@ class VMCore {
     Table globals;
     Stack stack;
 
-    Obj* objects{ nullptr };
     ObjUpvalue* openUpvalues{ nullptr };
 
     Compiler compiler;

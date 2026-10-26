@@ -14,6 +14,7 @@ class Compiler;
 class GC {
 public:
     explicit GC(VMCore& vm) : vm(vm) {}
+    ~GC();
 
     void Collect();
     void MarkValue(Value& value);

@@ -85,6 +85,19 @@ static std::size_t sharedInstruction(const char* name, Chunk& chunk, std::size_t
 }
 
 
+static std::size_t shortInstruction(const char* name, Chunk& chunk, std::size_t offset) {
+    OpCode::Type real = static_cast<OpCode::Type>(chunk.bytecode[offset + 1]);  
+    std::uint16_t constantIndex = (chunk.bytecode[offset + 2] << 8);
+    constantIndex |= chunk.bytecode[offset + 3];
+
+    std::printf("%-20s %4d '", OpCode::ToString(real), constantIndex);
+    Value::Print(chunk.constants[constantIndex]);
+    std::printf("' (short) \n");
+
+    return offset + 4;
+}
+
+
 // Debug methods -------------------------
 
 std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
@@ -106,6 +119,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
     switch (static_cast<OpCode::Type>(instruction)) {
         case OpCode::CONSTANT: {
             return constantInstruction("OP_CONSTANT", chunk, offset);
+        }
+
+        case OpCode::SHORT: {
+            return shortInstruction("OP_SHORT", chunk, offset);
         }
 
         case OpCode::NEGATE: {

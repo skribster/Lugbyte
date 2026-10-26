@@ -7,6 +7,10 @@
 
 namespace Luggage {
 
+GC::~GC() {
+    
+}
+
 
 // Public methods -----------------------------------
 

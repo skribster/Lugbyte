@@ -4,6 +4,7 @@
 
 #define OPCODE_LIST                 \
     OPCODE(CONSTANT)                \
+    OPCODE(SHORT)                   \
                                     \
     OPCODE(NEGATE)                  \
     OPCODE(NOT)                     \

@@ -50,8 +50,20 @@ void Chunk::WriteShort(std::uint16_t byte, std::size_t line) {
 void Chunk::WriteConstant(Value value, std::size_t line) {
     std::size_t constantIndex = AddConstant(value);
 
-    Write(OpCode::CONSTANT, line);
-    Write(static_cast<std::uint8_t>(constantIndex), line);
+    if (constantIndex > UINT8_MAX) {
+        Write(OpCode::SHORT, line);
+        Write(OpCode::CONSTANT, line);
+
+        /*
+            We will split the index (a std::uint16_t) 
+            into two std::uint8_t's, and during runtime
+            we'll combine it all again.
+        */
+        WriteShort(static_cast<std::uint16_t>(constantIndex), line);
+    } else {
+        Write(OpCode::CONSTANT, line);
+        Write(static_cast<std::uint8_t>(constantIndex), line);
+    }
 }
 
 

@@ -154,8 +154,10 @@ private:
     void EmitShort(std::uint16_t byte);
     void EmitReturn();
     void EmitConstant(Value value);
-    std::uint8_t MakeConstant(Value value);
-    std::uint8_t IdentifierConstant(Token& identifier);
+    void EmitShortable(OpCode::Type op, std::uint16_t constant);
+    
+    std::uint16_t MakeConstant(Value value);
+    std::uint16_t IdentifierConstant(Token& identifier);
     void EmitIdentifier(Token& identifier);
 
     std::size_t EmitJump(OpCode::Type instruction);
@@ -170,9 +172,9 @@ private:
     std::uint16_t ReadShortOperand(std::size_t instructionOffset);
     void WriteShortOperand(std::size_t instructionOffset, std::uint16_t value);
 
-    std::uint8_t ParseVariable(const char* errorMessage);
+    std::uint16_t ParseVariable(const char* errorMessage);
     void DeclareVariable();
-    void DefineVariable(std::uint8_t index);
+    void DefineVariable(std::uint16_t index);
 
     // Parse methods
 

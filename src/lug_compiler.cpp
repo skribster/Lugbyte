@@ -355,10 +355,31 @@ void Compiler::EmitReturn() {
  * the constant in the constant pool
  */
 void Compiler::EmitConstant(Value value) {
-    std::uint8_t constantIndex = MakeConstant(value);
+    CurrentChunk()->WriteConstant(value, parser.previous.line);
+}
 
-    CurrentChunk()->Write(OpCode::CONSTANT, parser.previous.line);
-    CurrentChunk()->Write(constantIndex, parser.previous.line);
+
+/**
+ * Emits an opcode with a possible short-able operand.
+ * What that means is that the operand, if bigger than
+ * UINT8_MAX will be prefixed with a SHORT instruction,
+ * so that it will be read as a short during runtime.
+ * For instance, when passing in OP_CONSTANT 260,
+ * this function will emit:
+ * 
+ * OP_SHORT
+ * OP_CONSTANT
+ * 255
+ * 5
+ */
+void Compiler::EmitShortable(OpCode::Type op, std::uint16_t index) {
+    if (index > UINT8_MAX) {
+        EmitByte(OpCode::SHORT);
+        EmitByte(op);
+        EmitShort(index);
+    } else {
+        EmitBytes(op, static_cast<std::uint8_t>(index));
+    }
 }
 
 
@@ -366,7 +387,7 @@ void Compiler::EmitConstant(Value value) {
  * Adds the value in the constant pool and
  * returns the index of the constant.
  */
-std::uint8_t Compiler::MakeConstant(Value value) {
+std::uint16_t Compiler::MakeConstant(Value value) {
     // MakeConstant returns the location of the
     // constant in the chunk's constant pool.
     
@@ -374,19 +395,19 @@ std::uint8_t Compiler::MakeConstant(Value value) {
     // can only store a 8-bit index operand, we need to
     // make sure the indices don't exceed that limit. 
     std::size_t constant = CurrentChunk()->AddConstant(value);
-    if (constant > UINT8_MAX) {
+    if (constant > UINT16_MAX) {
         parser.Error("Too many constants in one chunk.");
         return 0;
     }
 
-    return static_cast<std::uint8_t>(constant);
-}
+    return static_cast<std::uint16_t>(constant);
+}                                                                                                
 
 /**
  * Adds the identifier as an ObjString constant in the 
  * constant pool and returns the index of the constant.
  */
-std::uint8_t Compiler::IdentifierConstant(Token& identifier) {
+std::uint16_t Compiler::IdentifierConstant(Token& identifier) {
     ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
     return MakeConstant(string);
 }
@@ -404,7 +425,7 @@ void Compiler::EmitIdentifier(Token& identifier) {
  * identifier to create a new ObjString* constant, in which
  * MakeVariable returns the index to.
  */
-std::uint8_t Compiler::ParseVariable(const char* errorMessage) {
+std::uint16_t Compiler::ParseVariable(const char* errorMessage) {
     parser.Consume(TokenType::IDENTIFIER, errorMessage);
 
     DeclareVariable();
@@ -429,13 +450,13 @@ void Compiler::DeclareVariable() {
 }
 
 
-void Compiler::DefineVariable(std::uint8_t index) {
+void Compiler::DefineVariable(std::uint16_t index) {
     if (currentUnit->scopeDepth > 0) {
         currentUnit->MarkInitialized();
         return;
     }
 
-    EmitBytes(OpCode::DEFINE_GLOBAL, index);
+    EmitShortable(OpCode::DEFINE_GLOBAL, index);
 }
 
 
@@ -767,7 +788,7 @@ void Compiler::PrintStatement() {
 
 
 void Compiler::BoxStatement() {
-    std::uint8_t global = ParseVariable("Expected variable name.");
+    std::uint16_t global = ParseVariable("Expected variable name.");
     pendingName = parser.previous;
 
     if (parser.Match(TokenType::LEFT_ARROW)) {
@@ -1321,7 +1342,7 @@ void Compiler::Dot(bool canAssign) {
     }
 
     Token name = parser.previous;
-    std::uint8_t nameConstant = IdentifierConstant(name);
+    std::uint16_t nameConstant = IdentifierConstant(name);
 
     /*
         A colon operator such as:
@@ -1333,7 +1354,7 @@ void Compiler::Dot(bool canAssign) {
     if (dotted.type == TokenType::COLON) {
         parser.Consume(TokenType::LEFT_PAREN, "Expected function call after colon-accessed attribute.");
 
-        EmitBytes(OpCode::SELF, nameConstant);
+        EmitShortable(OpCode::SELF, nameConstant);
         ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT - 1);
 
         // ArgumentList() parsed all the arguments AFTER the self argument,
@@ -1359,10 +1380,10 @@ void Compiler::Dot(bool canAssign) {
         pendingName = name;
         
         StoredExpression();
-        EmitBytes(OpCode::SET_ATTRIBUTE, nameConstant);
+        EmitShortable(OpCode::SET_ATTRIBUTE, nameConstant);
         isValidExprStmt = true;
     } else {
-        EmitBytes(OpCode::GET_ATTRIBUTE, nameConstant);
+        EmitShortable(OpCode::GET_ATTRIBUTE, nameConstant);
         MarkGetter();
         isValidExprStmt = false;
     }
@@ -1580,7 +1601,7 @@ void Compiler::Function(bool canAssign) {
     parser.Consume(TokenType::END, "Expected 'end' after function body.");
 
     ObjFunction* function = PopUnit();
-    EmitBytes(OpCode::CLOSURE, MakeConstant(function));
+    EmitShortable(OpCode::CLOSURE, MakeConstant(function));
 
     // For every upvalue, we will emit two bytes: isLocal and index.
     // OP_CLOSURE has a variadic number of operands.
@@ -1654,8 +1675,8 @@ void Compiler::Thing(bool canAssign) {
         Expression();
         
         ObjString* protoAttribute = ObjString::FromLiteral(vm, "__proto__");
-        std::uint8_t protoConstant = MakeConstant(protoAttribute);
-        EmitBytes(OpCode::SET_ATTRIBUTE, protoConstant);
+        std::uint16_t protoConstant = MakeConstant(protoAttribute);
+        EmitShortable(OpCode::SET_ATTRIBUTE, protoConstant);
         EmitByte(OpCode::POP);
     }
 
@@ -1664,13 +1685,13 @@ void Compiler::Thing(bool canAssign) {
             do {
                 EmitByte(OpCode::DUPLICATE);
                 parser.Consume(TokenType::IDENTIFIER, "Expected attribute name.");
-                std::uint8_t attributeName = IdentifierConstant(parser.previous);
+                std::uint16_t attributeName = IdentifierConstant(parser.previous);
 
                 parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after attribute name.");
 
                 StoredExpression();
 
-                EmitBytes(OpCode::SET_ATTRIBUTE, attributeName);
+                EmitShortable(OpCode::SET_ATTRIBUTE, attributeName);
                 EmitByte(OpCode::POP);
             } while (parser.Match(TokenType::COMMA));
 
@@ -1700,7 +1721,7 @@ void Compiler::Category(bool canAssign) {
         EmitByte(OpCode::DUPLICATE);
         do {
             parser.Consume(TokenType::IDENTIFIER, "Expected category kind.");
-            std::uint8_t type = IdentifierConstant(parser.previous);
+            std::uint16_t type = IdentifierConstant(parser.previous);
             
             // Optional assignment
             if (parser.Match(TokenType::LEFT_ARROW)) {
@@ -1709,7 +1730,7 @@ void Compiler::Category(bool canAssign) {
                 EmitByte(OpCode::NIL);
             }
 
-            EmitBytes(OpCode::SET_ATTRIBUTE, type);
+            EmitShortable(OpCode::SET_ATTRIBUTE, type);
             
         } while (parser.Match(TokenType::COMMA));
         
@@ -1763,10 +1784,10 @@ void Compiler::NamedVariable(Token& name, bool canAssign) {
     
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
         StoredExpression();
-        EmitBytes(setOp, arg);
+        EmitShortable(setOp, arg);
         isValidExprStmt = true;
     } else {
-        EmitBytes(getOp, arg);
+        EmitShortable(getOp, arg);
         MarkGetter();
         isValidExprStmt = false;
     }

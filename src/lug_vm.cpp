@@ -124,11 +124,6 @@ VMCore::VMCore()
 }
 
 
-VMCore::~VMCore() {
-    gc.FreeObjects();
-}   
-
-
 bool VMCore::Interpret(std::string_view source) {
     try {
         ObjFunction* function = compiler.Compile(source.data());
@@ -483,19 +478,24 @@ void VMCore::CloseUpvalues(Value* last) {
 void VMCore::Run() {
     CallFrame* frame = stack.GetFrame();
 
+    bool isShortOp = false;
+
     #define READ_BYTE() (*frame->ip++)
-    #define READ_CONSTANT() (frame->closure->function->chunk.constants[READ_BYTE()])
     #define READ_STRING() (READ_CONSTANT().AsObj<ObjString>())
     #define READ_SHORT() ((READ_BYTE() << 8) | READ_BYTE())
+    #define READ_CONSTANT() (frame->closure->function->chunk.constants[isShortOp ? READ_SHORT() : READ_BYTE()])
 
-    #define BINARY_OP(op)                               \
-    do {                                                \
-        Value b = stack.Pop();                                \
-        Value a = stack.Pop();                                \
-        if (!a.IsNumber() || !b.IsNumber()) {           \
-            RuntimeError("Operands must be numbers.");  \
-        }                                               \
-        stack.Push(a.AsNumber() op b.AsNumber());             \
+    #define JUMP_FORWARD(bytes) (frame->ip += bytes)
+    #define JUMP_BACKWARD(bytes) (frame->ip -= bytes)
+
+    #define BINARY_OP(op)                                   \
+    do {                                                    \
+        Value b = stack.Pop();                              \
+        Value a = stack.Pop();                              \
+        if (!a.IsNumber() || !b.IsNumber()) {               \
+            RuntimeError("Operands must be numbers.");      \
+        }                                                   \
+        stack.Push(a.AsNumber() op b.AsNumber());           \
     } while (false)
 
     #define CLAMP_INDEX(index, numItems)                                    \
@@ -510,844 +510,818 @@ void VMCore::Run() {
 
     // Dispatch table shenanigans -------------------
 
-#ifdef LUG_DEBUG_TRACE_EXECUTION
-    #define TRACE_EXECUTION()                                                       \
-    do {                                                                            \
-        std::printf("          ");                                                  \
-        stack.Print();                                                              \
-                                                                                    \
-        Debug::DisassembleInstruction(                                              \
-            frame->closure->function->chunk,                                        \
-            (int)(frame->ip - frame->closure->function->chunk.bytecode.Data())      \
-        );                                                                          \
-    } while (false)
+    while (true) {
+    #ifdef LUG_DEBUG_TRACE_EXECUTION
+        std::printf("          ");
+        stack.Print();
 
-#else
-    #define TRACE_EXECUTION() do { } while (false)
-#endif
+        Debug::DisassembleInstruction(
+            frame->closure->function->chunk,
+            static_cast<int>((frame->ip - frame->closure->function->chunk.bytecode.Data()))
+        );                      
+    #endif
 
-#ifdef USE_COMPUTED_GOTO
-    static void* dispatchTable[] = {
-        #define OPCODE(name) &&CASE_##name,
-        OPCODE_LIST
-        #undef OPCODE
-    };
-
-    #define DISPATCH() do {                 \
-        TRACE_EXECUTION();                  \
-        goto *dispatchTable[READ_BYTE()];   \
-    } while (false); 
-
-    #define CASE(name) CASE_##name
-    #define INTERPRET_LOOP DISPATCH();
-                       
-#else
-    #define DISPATCH() goto loop
-    #define CASE(name) case OpCode::name
-    #define INTERPRET_LOOP                                                  \
-        OpCode::Type instruction;                                           \
-        loop:                                                               \
-            TRACE_EXECUTION();                                              \
-            switch (instruction = static_cast<OpCode::Type>(READ_BYTE()))
-
-#endif
-
-    // Dispatch loop!!! -------------------
-    INTERPRET_LOOP
-    {
-        CASE(CONSTANT): {
-            Value constant = READ_CONSTANT();
-            stack.Push(constant);
-            DISPATCH();
-        }
-
-        CASE(NEGATE): {
-            Value value = stack.Pop();
-            if (!value.IsNumber()) {
-                RuntimeError("Operand must be a number.");
+        OpCode::Type instruction;
+        switch (instruction = static_cast<OpCode::Type>(READ_BYTE())) {
+            case (OpCode::CONSTANT): {
+                Value constant = READ_CONSTANT();
+                stack.Push(constant);
+                break;
             }
 
-            stack.Push(-value.AsNumber());
-            DISPATCH();
-        }
-
-        CASE(NOT): {
-            Value value = stack.Pop();
-            stack.Push(IsFalsy(value));
-            DISPATCH();
-        }
-
-        CASE(TRUE): {
-            stack.Push(true);
-            DISPATCH();
-        }
-
-        CASE(FALSE): {
-            stack.Push(false);
-            DISPATCH();
-        }
-
-        CASE(NIL): {
-            stack.Push(Value::Nil());
-            DISPATCH();
-        }
-
-        CASE(ADD): {
-            if (stack.Peek(0).IsObj(ObjType::STRING) && stack.Peek(1).IsObj(ObjType::STRING)) {
-                Concatenate();
-            } else if (stack.Peek(0).IsNumber() && stack.Peek(1).IsNumber()) {
-                double b = stack.Pop().AsNumber();
-                double a = stack.Pop().AsNumber();
-
-                stack.Push(a + b);
-
-            } else {
-                RuntimeError("Can't add operands of type '%s' and '%s' together.", 
-                    stack.Peek(1).StringType(), 
-                    stack.Peek(0).StringType()
-                );
-                return;
+            case (OpCode::SHORT): {
+                isShortOp = true;
+                continue;
             }
 
-            DISPATCH();
-        }
+            case (OpCode::NEGATE): {
+                Value value = stack.Pop();
+                if (!value.IsNumber()) {
+                    RuntimeError("Operand must be a number.");
+                }
 
-        CASE(SUBTRACT): {
-            BINARY_OP(-);
-            DISPATCH();
-        }
-
-        CASE(MULTIPLY): {
-            BINARY_OP(*);
-            DISPATCH();
-        }
-
-        CASE(DIVIDE): {
-            if (stack.Peek(0).IsNumber() && stack.Peek(0).AsNumber() == 0) {
-                RuntimeError("Can't divide by zero.");
+                stack.Push(-value.AsNumber());
+                break;
             }
 
-            BINARY_OP(/);
-            DISPATCH();
-        }
-
-        CASE(MODULO): {
-            Value bValue = stack.Pop();
-            Value aValue = stack.Pop();
-            if (!aValue.IsNumber() || !bValue.IsNumber()) {           
-                RuntimeError("Operands must be numbers.");
-            }    
-
-            double a = aValue.AsNumber();
-            double b = bValue.AsNumber();
-            stack.Push(a - std::floor(a / b) * b);
-            
-            DISPATCH();
-        }
-
-        CASE(EQUAL): {
-            Value b = stack.Pop();
-            Value a = stack.Pop();
-            stack.Push(a == b);
-            DISPATCH();
-        }
-
-        CASE(GREATER): {
-            BINARY_OP(>);
-            DISPATCH();
-        }
-        
-        CASE(GREATER_EQUAL): {
-            BINARY_OP(>=);
-            DISPATCH();
-        }
-        
-        CASE(LESS): {
-            BINARY_OP(<);
-            DISPATCH();
-        }
-        
-        CASE(LESS_EQUAL): {
-            BINARY_OP(<=);
-            DISPATCH();
-        }
-
-        CASE(JUMP): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            frame->ip += numBytesToJump;
-            DISPATCH();
-        }
-
-        CASE(JUMP_IF_FALSE): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(stack.Peek(0))) {
-                frame->ip += numBytesToJump;
-            }
-            DISPATCH();
-        }
-
-        CASE(JUMP_IF_TRUE): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(stack.Peek(0))) {
-                frame->ip += numBytesToJump;
-            }
-            DISPATCH();
-        }
-
-        CASE(JUMP_IF_FALSE_OR_POP): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(stack.Peek(0))) {
-                frame->ip += numBytesToJump;
-            } else {
-                stack.Pop();
-            }
-            DISPATCH();
-        }
-
-        CASE(JUMP_IF_TRUE_OR_POP): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(stack.Peek(0))) {
-                frame->ip += numBytesToJump;
-            } else {
-                stack.Pop();
-            }
-            DISPATCH();
-        }
-
-        CASE(POP_JUMP_IF_FALSE): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsFalsy(stack.Pop())) {
-                frame->ip += numBytesToJump;
+            case (OpCode::NOT): {
+                Value value = stack.Pop();
+                stack.Push(IsFalsy(value));
+                break;
             }
 
-            DISPATCH();
-        }
-
-        CASE(POP_JUMP_IF_TRUE): {
-            std::uint16_t numBytesToJump = READ_SHORT();
-            if (IsTruthy(stack.Pop())) {
-                frame->ip += numBytesToJump;
+            case (OpCode::TRUE): {
+                stack.Push(true);
+                break;
             }
 
-            DISPATCH();
-        }
-
-        CASE(LOOP): {
-            std::uint16_t numBytesToJumpBack = READ_SHORT();
-            frame->ip -= numBytesToJumpBack;
-            DISPATCH();
-        }
-
-        CASE(COUNT_PREP): {
-            std::uint16_t jumpToEnd = READ_SHORT();
-
-            Value start = stack.Peek(2);
-            Value stop = stack.Peek(1);
-            Value step = stack.Peek(0);
-
-            if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
-            if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
-            if (!step.IsNumber()) RuntimeError("'count' step value must be a number.");
-            
-            // Check if the loop would even run at all.
-            if (step.AsNumber() == 0) {
-                RuntimeError("'count' step value cannot be zero.");
-            }
-            
-            // This handles cases like:
-            // count a from 0 to 10 by -1 do ... end
-            // count b from 10 to 0 do ... end
-            // where the loop would never run because the step is in the wrong direction.
-            if (
-                step.AsNumber() > 0 ? 
-                start.AsNumber() > stop.AsNumber() :
-                start.AsNumber() < stop.AsNumber()
-            ) {
-                frame->ip += jumpToEnd;
+            case (OpCode::FALSE): {
+                stack.Push(false);
+                break;
             }
 
-            DISPATCH();
-        }
-
-        CASE(COUNT_LOOP): {
-            /* 
-                When COUNT_LOOP is reached, the stack will look like this:
-                [ 00000 ][ 00005 ][ 00001 ]
-                  ^^^^^    ^^^^^    ^^^^^    ^^^^^
-                  start    limit     step    stackTop
-
-                ...where stack.Peek(0) = step, stack.Peek(1) = limit, and stack.Peek(2) = start.
-            */
-
-            std::uint16_t jumpToStart = READ_SHORT();
-
-            Value& start = stack.Peek(2);
-            Value& limit = stack.Peek(1);
-            Value& step = stack.Peek(0);
-
-            // COUNT_PREP should've already checked if these were numbers or not.
-            // If we still have them as not a number, then we should assert.
-            ASSERT(start.IsNumber(), "Invalid start");
-            ASSERT(limit.IsNumber(), "Invalid limit");
-            ASSERT(step.IsNumber(), "Invalid step");   
-
-            // Increment index.
-            start = start.AsNumber() + step.AsNumber();
-            if (step.AsNumber() > 0 ? 
-                start.AsNumber() <= limit.AsNumber() :
-                start.AsNumber() >= limit.AsNumber()
-            ) {
-                // Repeat loop
-                frame->ip -= jumpToStart;
+            case (OpCode::NIL): {
+                stack.Push(Value::Nil());
+                break;
             }
 
-            DISPATCH();
-        }
+            case (OpCode::ADD): {
+                if (stack.Peek(0).IsObj(ObjType::STRING) && stack.Peek(1).IsObj(ObjType::STRING)) {
+                    Concatenate();
+                } else if (stack.Peek(0).IsNumber() && stack.Peek(1).IsNumber()) {
+                    double b = stack.Pop().AsNumber();
+                    double a = stack.Pop().AsNumber();
 
-        CASE(FOREACH_PREP): {
-            /*
-                When FOREACH_PREP is reached, the stack may look like this:
-                [  nil  ][  nil  ][  nil  ][   [1, 2, 3]   ]
-                 ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
-                probe idx  value  key/index    iterable     stackTop   
+                    stack.Push(a + b);
 
-                ...where the probing index, key, and value values are nil.
-            */
+                } else {
+                    RuntimeError("Can't add operands of type '%s' and '%s' together.", 
+                        stack.Peek(1).StringType(), 
+                        stack.Peek(0).StringType()
+                    );
+                    return;
+                }
 
-            std::uint16_t jumpToEnd = READ_SHORT();
+                break;
+            }
 
-            Value& value = stack.Peek(2);
-            Value& key = stack.Peek(1);
-            Value& iterable = stack.Peek(0);
-            
-            if (iterable.IsObj(ObjType::LIST)) {
-                ObjList* list = iterable.AsObj<ObjList>();
-                if (!key.IsNumber()) key = 0;
+            case (OpCode::SUBTRACT): {
+                BINARY_OP(-);
+                break;
+            }
 
-                // list->Get may return nullptr if the index is out of range.
-                const Value* listValue = list->Get(key.AsNumber());
-                ASSERT(listValue != nullptr, "The foreach index is out of range.");
-                value = *listValue;
+            case (OpCode::MULTIPLY): {
+                BINARY_OP(*);
+                break;
+            }
+
+            case (OpCode::DIVIDE): {
+                if (stack.Peek(0).IsNumber() && stack.Peek(0).AsNumber() == 0) {
+                    RuntimeError("Can't divide by zero.");
+                }
+
+                BINARY_OP(/);
+                break;
+            }
+
+            case (OpCode::MODULO): {
+                Value bValue = stack.Pop();
+                Value aValue = stack.Pop();
+                if (!aValue.IsNumber() || !bValue.IsNumber()) {           
+                    RuntimeError("Operands must be numbers.");
+                }    
+
+                double a = aValue.AsNumber();
+                double b = bValue.AsNumber();
+                stack.Push(a - std::floor(a / b) * b);
                 
-                if (static_cast<std::size_t>(key.AsInteger()) >= list->items.Count()) {
-                    frame->ip += jumpToEnd;
-                }
-            } 
-            
-            else if (iterable.IsObj(ObjType::DICT)) {
-                ObjDict* dict = iterable.AsObj<ObjDict>();
-                Value& probingIndex = stack.Peek(3);
-                if (!probingIndex.IsNumber()) probingIndex = 0;
-
-                std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
-                while (
-                    index <= dict->entries.capacity 
-                    && dict->entries.entries[index].IsEmpty()
-                ) index++;
-
-                if (index == dict->entries.capacity) {
-                    frame->ip += jumpToEnd;
-                }
-
-                Entry& currentEntry = dict->entries.entries[index];
-                key = currentEntry.key;
-                value = currentEntry.value;
-                probingIndex = static_cast<int>(index);
-            } 
-            
-            else {
-                RuntimeError("'foreach' must iterate over an iterable type, got '%s' instead.", iterable.StringType());
+                break;
             }
 
-            DISPATCH();
-        }
+            case (OpCode::EQUAL): {
+                Value b = stack.Pop();
+                Value a = stack.Pop();
+                stack.Push(a == b);
+                break;
+            }
 
-        CASE(FOREACH_LOOP): {
-            /*
-                When FOREACH_PREP is reached, the stack may look like this:
-                [  nil  ][   1   ][   0   ][   [1, 2, 3]   ]
-                 ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
-                probe idx  value  key/index    iterable     stackTop   
-            */
+            case (OpCode::GREATER): {
+                BINARY_OP(>);
+                break;
+            }
+            
+            case (OpCode::GREATER_EQUAL): {
+                BINARY_OP(>=);
+                break;
+            }
+            
+            case (OpCode::LESS): {
+                BINARY_OP(<);
+                break;
+            }
+            
+            case (OpCode::LESS_EQUAL): {
+                BINARY_OP(<=);
+                break;
+            }
 
-            std::uint16_t jumpToStart = READ_SHORT();
+            case (OpCode::JUMP): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                JUMP_FORWARD(numBytesToJump);
+                break;
+            }
 
-            Value& value = stack.Peek(2);
-            Value& key = stack.Peek(1);
-            Value& iterable = stack.Peek(0);
+            case (OpCode::JUMP_IF_FALSE): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsFalsy(stack.Peek(0))) {
+                    JUMP_FORWARD(numBytesToJump);
+                }
+                break;
+            }
 
-            if (iterable.IsObj(ObjType::LIST)) {
-                ObjList* list = iterable.AsObj<ObjList>();
-                key = key.AsInteger() + 1;
+            case (OpCode::JUMP_IF_TRUE): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsTruthy(stack.Peek(0))) {
+                    JUMP_FORWARD(numBytesToJump);
+                }
+                break;
+            }
 
-                // Check if we exceeded the index count. If so, that means
-                // we're done with iterating through the list. Exit out of
-                // the loop.
-                if (key.AsInteger() < list->items.Count()) {
-                    // In case we screwed something up by letting the index go out of
-                    // range of the list, causing list->Get to return nullptr, we assert
+            case (OpCode::JUMP_IF_FALSE_OR_POP): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsFalsy(stack.Peek(0))) {
+                    JUMP_FORWARD(numBytesToJump);
+                } else {
+                    stack.Pop();
+                }
+                break;
+            }
+
+            case (OpCode::JUMP_IF_TRUE_OR_POP): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsTruthy(stack.Peek(0))) {
+                    JUMP_FORWARD(numBytesToJump);
+                } else {
+                    stack.Pop();
+                }
+                break;
+            }
+
+            case (OpCode::POP_JUMP_IF_FALSE): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsFalsy(stack.Pop())) {
+                    JUMP_FORWARD(numBytesToJump);
+                }
+
+                break;
+            }
+
+            case (OpCode::POP_JUMP_IF_TRUE): {
+                std::uint16_t numBytesToJump = READ_SHORT();
+                if (IsTruthy(stack.Pop())) {
+                    JUMP_FORWARD(numBytesToJump);
+                }
+
+                break;
+            }
+
+            case (OpCode::LOOP): {
+                std::uint16_t numBytes = READ_SHORT();
+                JUMP_BACKWARD(numBytes);
+                break;
+            }
+
+            case (OpCode::COUNT_PREP): {
+                std::uint16_t jumpToEnd = READ_SHORT();
+
+                Value start = stack.Peek(2);
+                Value stop = stack.Peek(1);
+                Value step = stack.Peek(0);
+
+                if (!start.IsNumber()) RuntimeError("'count' initial value must be a number.");
+                if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number.");
+                if (!step.IsNumber()) RuntimeError("'count' step value must be a number.");
+                
+                // Check if the loop would even run at all.
+                if (step.AsNumber() == 0) {
+                    RuntimeError("'count' step value cannot be zero.");
+                }
+                
+                // This handles cases like:
+                // count a from 0 to 10 by -1 do ... end
+                // count b from 10 to 0 do ... end
+                // where the loop would never run because the step is in the wrong direction.
+                if (
+                    step.AsNumber() > 0 ? 
+                    start.AsNumber() > stop.AsNumber() :
+                    start.AsNumber() < stop.AsNumber()
+                ) {
+                    JUMP_FORWARD(jumpToEnd);
+                }
+
+                break;
+            }
+
+            case (OpCode::COUNT_LOOP): {
+                /* 
+                    When COUNT_LOOP is reached, the stack will look like this:
+                    [ 00000 ][ 00005 ][ 00001 ]
+                    ^^^^^    ^^^^^    ^^^^^    ^^^^^
+                    start    limit     step    stackTop
+
+                    ...where stack.Peek(0) = step, stack.Peek(1) = limit, and stack.Peek(2) = start.
+                */
+
+                std::uint16_t jumpToStart = READ_SHORT();
+
+                Value& start = stack.Peek(2);
+                Value& limit = stack.Peek(1);
+                Value& step = stack.Peek(0);
+
+                // COUNT_PREP should've already checked if these were numbers or not.
+                // If we still have them as not a number, then we should assert.
+                ASSERT(start.IsNumber(), "Invalid start");
+                ASSERT(limit.IsNumber(), "Invalid limit");
+                ASSERT(step.IsNumber(), "Invalid step");   
+
+                // Increment index.
+                start = start.AsNumber() + step.AsNumber();
+                if (step.AsNumber() > 0 ? 
+                    start.AsNumber() <= limit.AsNumber() :
+                    start.AsNumber() >= limit.AsNumber()
+                ) {
+                    // Repeat loop
+                    JUMP_BACKWARD(jumpToStart);
+                }
+
+                break;
+            }
+
+            case (OpCode::FOREACH_PREP): {
+                /*
+                    When FOREACH_PREP is reached, the stack may look like this:
+                    [  nil  ][  nil  ][  nil  ][   [1, 2, 3]   ]
+                    ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
+                    probe idx  value  key/index    iterable     stackTop   
+
+                    ...where the probing index, key, and value values are nil.
+                */
+
+                std::uint16_t jumpToEnd = READ_SHORT();
+
+                Value& value = stack.Peek(2);
+                Value& key = stack.Peek(1);
+                Value& iterable = stack.Peek(0);
+                
+                if (iterable.IsObj(ObjType::LIST)) {
+                    ObjList* list = iterable.AsObj<ObjList>();
+                    if (!key.IsNumber()) key = 0;
+
+                    // list->Get may return nullptr if the index is out of range.
                     const Value* listValue = list->Get(key.AsNumber());
                     ASSERT(listValue != nullptr, "The foreach index is out of range.");
                     value = *listValue;
+                    
+                    if (static_cast<std::size_t>(key.AsInteger()) >= list->items.Count()) {
+                        JUMP_FORWARD(jumpToEnd);
+                    }
+                } 
+                
+                else if (iterable.IsObj(ObjType::DICT)) {
+                    ObjDict* dict = iterable.AsObj<ObjDict>();
+                    Value& probingIndex = stack.Peek(3);
+                    if (!probingIndex.IsNumber()) probingIndex = 0;
 
-                    frame->ip -= jumpToStart;
-                }
-            } 
+                    std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
+                    while (
+                        index <= dict->entries.capacity 
+                        && dict->entries.entries[index].IsEmpty()
+                    ) index++;
 
-            else if (iterable.IsObj(ObjType::DICT)) {
-                ObjDict* dict = iterable.AsObj<ObjDict>();
-                Value& probingIndex = stack.Peek(3);
-                ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
+                    if (index == dict->entries.capacity) {
+                        JUMP_FORWARD(jumpToEnd);
+                    }
 
-                std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
-                do index++; while (
-                    index <= dict->entries.capacity 
-                    && dict->entries.entries[index].IsEmpty()
-                );
-
-                if (index < dict->entries.capacity) {
                     Entry& currentEntry = dict->entries.entries[index];
                     key = currentEntry.key;
                     value = currentEntry.value;
                     probingIndex = static_cast<int>(index);
-                    frame->ip -= jumpToStart;
+                } 
+                
+                else {
+                    RuntimeError("'foreach' must iterate over an iterable type, got '%s' instead.", iterable.StringType());
                 }
-            }
-            
-            else {
-                ASSERT(false, "Invalid iterable");
+
+                break;
             }
 
-            DISPATCH();
-        }
+            case (OpCode::FOREACH_LOOP): {
+                /*
+                    When FOREACH_PREP is reached, the stack may look like this:
+                    [  nil  ][   1   ][   0   ][   [1, 2, 3]   ]
+                    ^^^^^^^  ^^^^^^^  ^^^^^^^     ^^^^^^^^^     ^^^^^
+                    probe idx  value  key/index    iterable     stackTop   
+                */
 
-        CASE(PLACEHOLDER): {
-            ASSERT(false, "Placeholder found during runtime.");
-        }
-        
-        CASE(POP): {
-            stack.Pop();
-            DISPATCH();
-        }
+                std::uint16_t jumpToStart = READ_SHORT();
 
-        CASE(DUPLICATE): {
-            stack.Push(stack.Peek(0));
-            DISPATCH();
-        }
+                Value& value = stack.Peek(2);
+                Value& key = stack.Peek(1);
+                Value& iterable = stack.Peek(0);
 
-        CASE(COPY): {
-            Value value = stack.Peek(0);
-            Value copy = Deepcopy(value);
-            stack.Pop();
-            stack.Push(copy);
+                if (iterable.IsObj(ObjType::LIST)) {
+                    ObjList* list = iterable.AsObj<ObjList>();
+                    key = key.AsInteger() + 1;
 
-            DISPATCH();
-        }
+                    // Check if we exceeded the index count. If so, that means
+                    // we're done with iterating through the list. Exit out of
+                    // the loop.
+                    if (key.AsInteger() < list->items.Count()) {
+                        // In case we screwed something up by letting the index go out of
+                        // range of the list, causing list->Get to return nullptr, we assert
+                        const Value* listValue = list->Get(key.AsNumber());
+                        ASSERT(listValue != nullptr, "The foreach index is out of range.");
+                        value = *listValue;
 
-        CASE(DEFINE_GLOBAL): {
-            /*
-                The operand of DEFINE_GLOBAL is a
-                string constant, or the name of the
-                global. The value of the global
-                is the value on top of the stack.
-            */
-            ObjString* string = READ_STRING();
-            globals.Set(string, stack.Peek(0));
-            stack.Pop();
+                        JUMP_BACKWARD(jumpToStart);
+                    }
+                } 
 
-            DISPATCH();
-        }
+                else if (iterable.IsObj(ObjType::DICT)) {
+                    ObjDict* dict = iterable.AsObj<ObjDict>();
+                    Value& probingIndex = stack.Peek(3);
+                    ASSERT(probingIndex.IsInteger(), "Invalid type for probing index");
 
-        CASE(GET_GLOBAL): {
-            ObjString* name = READ_STRING();
-            Value* value = globals.Get(name);
+                    std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
+                    do index++; while (
+                        index <= dict->entries.capacity 
+                        && dict->entries.entries[index].IsEmpty()
+                    );
 
-            if (value == nullptr) {
-                RuntimeError("Undefined variable '%s'.", name->characters);
+                    if (index < dict->entries.capacity) {
+                        Entry& currentEntry = dict->entries.entries[index];
+                        key = currentEntry.key;
+                        value = currentEntry.value;
+                        probingIndex = static_cast<int>(index);
+                        JUMP_BACKWARD(jumpToStart);
+                    }
+                }
+                
+                else {
+                    ASSERT(false, "Invalid iterable");
+                }
+
+                break;
             }
 
-            stack.Push(*value);
-            DISPATCH();
-        }
-        
-        CASE(SET_GLOBAL): {
-            ObjString* name = READ_STRING();
-
-            // We assign the name to the value at the top of the stack.
-            Value& value = stack.Peek(0);
-            bool isNewKey = globals.Set(name, value);
+            case (OpCode::PLACEHOLDER): {
+                ASSERT(false, "Placeholder found during runtime.");
+            }
             
-            if (isNewKey) {
-                globals.Delete(name);
-                RuntimeError("Undefined variable '%s'.", name->characters);
+            case (OpCode::POP): {
+                stack.Pop();
+                break;
             }
 
-            DISPATCH();
-        }
+            case (OpCode::DUPLICATE): {
+                stack.Push(stack.Peek(0));
+                break;
+            }
 
-        CASE(GET_LOCAL): {
-            std::uint8_t slot = READ_BYTE();
-            stack.Push(frame->slots[slot]);
+            case (OpCode::COPY): {
+                Value value = stack.Peek(0);
+                Value copy = Deepcopy(value);
+                stack.Pop();
+                stack.Push(copy);
 
-            DISPATCH();
-        }
+                break;
+            }
 
-        CASE(SET_LOCAL): {
-            std::uint8_t slot = READ_BYTE();
-            frame->slots[slot] = stack.Peek(0);
+            case (OpCode::DEFINE_GLOBAL): {
+                /*
+                    The operand of DEFINE_GLOBAL is a
+                    string constant, or the name of the
+                    global. The value of the global
+                    is the value on top of the stack.
+                */
+                ObjString* string = READ_STRING();
+                globals.Set(string, stack.Peek(0));
+                stack.Pop();
+
+                break;
+            }
+
+            case (OpCode::GET_GLOBAL): {
+                ObjString* name = READ_STRING();
+                Value* value = globals.Get(name);
+
+                if (value == nullptr) {
+                    RuntimeError("Undefined variable '%s'.", name->characters);
+                }
+
+                stack.Push(*value);
+                break;
+            }
             
-            DISPATCH();
-        }
+            case (OpCode::SET_GLOBAL): {
+                ObjString* name = READ_STRING();
 
-        CASE(GET_UPVALUE): {
-            std::uint8_t slot = READ_BYTE();
-            stack.Push(*frame->closure->upvalues[slot]->location);
+                // We assign the name to the value at the top of the stack.
+                Value& value = stack.Peek(0);
+                bool isNewKey = globals.Set(name, value);
+                
+                if (isNewKey) {
+                    globals.Delete(name);
+                    RuntimeError("Undefined variable '%s'.", name->characters);
+                }
 
-            DISPATCH();
-        }
+                break;
+            }
 
-        CASE(SET_UPVALUE): {
-            std::uint8_t slot = READ_BYTE();
-            *frame->closure->upvalues[slot]->location = stack.Peek(0);
+            case (OpCode::GET_LOCAL): {
+                std::uint8_t slot = READ_BYTE();
+                stack.Push(frame->slots[slot]);
 
-            DISPATCH();
-        }
+                break;
+            }
 
-        CASE(CLOSE_UPVALUE): {
-            CloseUpvalues(stack.top - 1);
-            stack.Pop();
+            case (OpCode::SET_LOCAL): {
+                std::uint8_t slot = READ_BYTE();
+                frame->slots[slot] = stack.Peek(0);
+                
+                break;
+            }
 
-            DISPATCH();
-        }
+            case (OpCode::GET_UPVALUE): {
+                std::uint8_t slot = READ_BYTE();
+                stack.Push(*frame->closure->upvalues[slot]->location);
 
-        CASE(CALL): {
-            std::uint8_t argCount = READ_BYTE();
+                break;
+            }
+
+            case (OpCode::SET_UPVALUE): {
+                std::uint8_t slot = READ_BYTE();
+                *frame->closure->upvalues[slot]->location = stack.Peek(0);
+
+                break;
+            }
+
+            case (OpCode::CLOSE_UPVALUE): {
+                CloseUpvalues(stack.top - 1);
+                stack.Pop();
+
+                break;
+            }
+
+            case (OpCode::CALL): {
+                std::uint8_t argCount = READ_BYTE();
+                
+                // Attempt to call the callee, whether it is of any value type.
+                CallValue(stack.Peek(argCount), argCount, 0b0);
+                
+                break;
+            }
             
-            // Attempt to call the callee, whether it is of any value type.
-            CallValue(stack.Peek(argCount), argCount, 0b0);
+            case (OpCode::CALL_SHARED): {
+                std::uint8_t argCount = READ_BYTE();
+                std::uint8_t shared = READ_BYTE();
+
+                CallValue(stack.Peek(argCount), argCount, shared);
+                
+                break;
+            }
+
+            case (OpCode::SELF): {
+                ObjString* methodName = READ_STRING();
+                Value object = stack.Pop();
+                ObjThing* thing = nullptr;
+
+                if (object.IsObj(ObjType::THING)) {
+                    thing = object.AsObj<ObjThing>();
+
+                } else if (GetProtoOf(object) != nullptr) {
+                    thing = GetProtoOf(object);
+
+                } else {
+                    RuntimeError(
+                        "Method '%s' does not exist in value of type '%s'.", 
+                        methodName->characters, 
+                        object.StringType()
+                    );
+                }
+
+                const Value* value = thing->Get(methodName);
+                stack.Push(*value);
+                stack.Push(object);
+
+                break;
+            }
+
+            case (OpCode::CLOSURE): {
+                ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
+                ObjClosure* closure = ObjClosure::New(*this, function);
+                stack.Push(closure);
+
+                for (std::size_t i = 0; i < closure->upvalueCount; i++) {
+                    std::uint8_t isLocal = READ_BYTE();
+                    std::uint8_t index = READ_BYTE();
+                    
+                    // When we emitted OP_CLOSURE, we were done parsing
+                    // a function declaration. Now, the current function is
+                    // the SURROUNDING function of that declaration, so we can
+                    // read the upvalue right from the current ``call frame to grab
+                    // it from the enclosing function.
+                    if (isLocal) {
+                        closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
+                    } else {
+                        closure->upvalues[i] = frame->closure->upvalues[index];
+                    }
+                }
+
+                break;
+            }
             
-            DISPATCH();
-        }
-        
-        CASE(CALL_SHARED): {
-            std::uint8_t argCount = READ_BYTE();
-            std::uint8_t shared = READ_BYTE();
+            case (OpCode::LIST): {
+                ObjList* newList = ObjList::New(*this);
+                stack.Push(newList);
 
-            CallValue(stack.Peek(argCount), argCount, shared);
+                break;
+            }
+
+            case (OpCode::DICT): {
+                ObjDict* newDict = ObjDict::New(*this);
+                stack.Push(newDict);
+
+                break;
+            }
+
+            case (OpCode::THING): {
+                ObjThing* newThing = ObjThing::New(*this);
+                stack.Push(newThing);
+
+                break;
+            }
+
+            case (OpCode::CATEGORY): {
+                ObjCategory* newCategory = ObjCategory::New(*this);
+                stack.Push(newCategory);
+
+                break;
+            }
+
+            case (OpCode::APPEND): {
+                ObjList* list = stack.Peek(1).AsObj<ObjList>();
+                list->Append(stack.Pop());
+                
+                break;
+            }
+
+            case (OpCode::DEFINE_ENTRY): {
+                ObjDict* dictionary = stack.Peek(2).AsObj<ObjDict>();
+                const Value& key = stack.Peek(1);
+                const Value& value = stack.Peek(0);
+
+                dictionary->Set(key, value);
+
+                stack.Pop();
+                stack.Pop();
+
+                break;
+            }
+
+            case (OpCode::GET_INDEX): {
+                //    stack.Peek(1)     stack.Peek(0)
+                // [ collection ][ index ]
+                //                 ^^^^^ stackTop. You are here.
+                Value& collection = stack.Peek(1);
+                if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
+                    RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
+                }
+                
+                switch (collection.AsObj()->type) {
+                    case ObjType::LIST: {
+                        if (!stack.Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
+                        
+                        ObjList* list = collection.AsObj<ObjList>();
+                        int index = stack.Peek(0).AsInteger();
+                        const Value* value = list->Get(index);
+
+                        stack.Pop(); // Index
+                        stack.Pop(); // Collection
+
+                        // Leave only the value of the indexed list.
+                        stack.Push(*value);
+
+                        break;
+                    }
+
+                    case ObjType::DICT: {
+                        ObjDict* dict = collection.AsObj<ObjDict>();
+
+                        Value& key = stack.Peek(0);
+                        const Value* value = dict->Get(key);
+                        if (value == nullptr) {
+                            
+                            RuntimeError("Could not find key in dictionary.");
+                        }
+
+                        stack.Pop(); // Key
+                        stack.Pop(); // Collection
+                        
+                        stack.Push(*value);
+
+                        break;
+                    }
+                }
+
+                break;
+            }
             
-            DISPATCH();
-        }
+            case (OpCode::SET_INDEX): {
+                //     stack.Peek(2)    stack.Peek(1)    stack.Peek(0)
+                // [ collection ][ index ][ newValue ]
+                //                                    ^^^^^^ stackTop. You are here.
+                Value& collection = stack.Peek(2);
+                if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
+                    RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
+                }
 
-        CASE(SELF): {
-            ObjString* methodName = READ_STRING();
-            Value object = stack.Pop();
-            ObjThing* thing = nullptr;
+                Value newValue = stack.Peek(0);
 
-            if (object.IsObj(ObjType::THING)) {
-                thing = object.AsObj<ObjThing>();
+                switch (collection.AsObj()->type) {
+                    case ObjType::LIST: {
+                        // Lists must always have integers as indices.
+                        if (!stack.Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
+                        
+                        ObjList* list = collection.AsObj<ObjList>();
+                        int index = stack.Peek(1).AsInteger();
+                        list->Set(index, newValue); 
 
-            } else if (GetProtoOf(object) != nullptr) {
-                thing = GetProtoOf(object);
+                        break;
+                    }
 
-            } else {
+                    case ObjType::DICT: {
+                        ObjDict* dictionary = collection.AsObj<ObjDict>();
+
+                        // Dictionaries have Lua semantics, where setting a key to nil
+                        // removes the entry entirely.
+                        // (i.e. a["hello"] <- nil removes the "hello" key as well, and
+                        // won't be counted in loops.)
+
+                        Value key = stack.Peek(1);
+                        if (newValue.IsNil()) {
+                            dictionary->Delete(key);
+                        } else {
+                            dictionary->Set(key, newValue);
+                        }
+
+                        break;
+                    }
+                }
+
+                stack.Pop(); // New value
+                stack.Pop(); // Index
+                stack.Pop(); // Collection
+
+                stack.Push(newValue);
+
+                break;
+            }
+
+            case (OpCode::GET_ATTRIBUTE): {
+                ObjString* attributeName = READ_STRING();
+
+                if (stack.Peek(0).IsObj(ObjType::CATEGORY)) {
+                    ObjCategory* category = stack.Peek(0).AsObj<ObjCategory>();
+                    const Value* type = category->GetType(attributeName);
+                    if (type == nullptr) {
+                        RuntimeError("Type '%s' does not exist in category.", attributeName->characters);
+                    }
+
+                    stack.Pop(); // Category
+                    stack.Push(*type);
+
+                    break;
+                }
+
+                if (stack.Peek(0).IsObj(ObjType::THING)) {
+                    ObjThing* thing = stack.Peek(0).AsObj<ObjThing>();
+                    const Value* value = thing->Get(attributeName);
+                    if (value == nullptr) {
+                        RuntimeError("Thing has no attribute named '%s'.", attributeName->characters);
+                    }
+                    
+                    stack.Pop(); // Thing
+                    stack.Push(*value);
+
+                    break;
+                }
+
+                ObjThing* proto = GetProtoOf(stack.Peek(0));
+                if (proto && proto->Get(attributeName) != nullptr) {
+                    const Value* value = proto->Get(attributeName);
+                    if (value == nullptr) {
+                        RuntimeError("Could not find '%s' in value.", attributeName->characters);
+                    }
+
+                    stack.Pop();
+                    stack.Push(*value);
+
+                    break;
+                }
+                
                 RuntimeError(
-                    "Method '%s' does not exist in value of type '%s'.", 
-                    methodName->characters, 
-                    object.StringType()
+                    "Type '%s' does not support attributes.", 
+                    stack.Peek(0).StringType()
+                );
+
+                break;
+            }
+
+            case (OpCode::SET_ATTRIBUTE): {
+                // [ <thing> ][ 5 ]
+                //   ^^^^^^^   ^^^   ^^^^^^
+                //   object   value  stackTop
+                //   stack.Peek(1)  stack.Peek(0)
+
+                ObjString* attributeName = READ_STRING();
+                Value object = stack.Peek(1);
+                Value value = stack.Peek(0);
+
+                if (object.IsObj(ObjType::THING)) {
+                    ObjThing* thing = object.AsObj<ObjThing>();
+                    if (value.IsNil()) {
+                        thing->Delete(attributeName);
+                    } else {
+                        thing->Set(attributeName, value);
+                    }
+
+                    stack.Pop();
+                    stack.Pop();
+                    stack.Push(value); // Push the value back since assignments leave the value on the stack.
+                    
+                    break;
+                }
+
+                if (object.IsObj(ObjType::CATEGORY)) {
+                    ObjCategory* category = object.AsObj<ObjCategory>();
+
+                    // Note that we cannot add new kinds after the category literal.
+                    // category->AddType will error for us when we try and re-define
+                    // an attribute that has already been defined.
+                    category->AddType(attributeName, value);
+                    stack.Pop();
+
+                    break;
+                }
+
+                RuntimeError(
+                    "Attribute '%s' does not exist in value of type '%s'.", 
+                    attributeName->characters, 
+                    stack.Peek(0).StringType()
                 );
             }
-
-            const Value* value = thing->Get(methodName);
-            stack.Push(*value);
-            stack.Push(object);
-
-            DISPATCH();
-        }
-
-        CASE(CLOSURE): {
-            ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
-            ObjClosure* closure = ObjClosure::New(*this, function);
-            stack.Push(closure);
-
-            for (std::size_t i = 0; i < closure->upvalueCount; i++) {
-                std::uint8_t isLocal = READ_BYTE();
-                std::uint8_t index = READ_BYTE();
+            
+            case (OpCode::PRINT): {
+                Value::Print(stack.Pop());
+                std::printf("\n");
                 
-                // When we emitted OP_CLOSURE, we were done parsing
-                // a function declaration. Now, the current function is
-                // the SURROUNDING function of that declaration, so we can
-                // read the upvalue right from the current ``call frame to grab
-                // it from the enclosing function.
-                if (isLocal) {
-                    closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
-                } else {
-                    closure->upvalues[i] = frame->closure->upvalues[index];
-                }
+                break;
             }
 
-            DISPATCH();
-        }
-        
-        CASE(LIST): {
-            ObjList* newList = ObjList::New(*this);
-            stack.Push(newList);
+            case (OpCode::RETURN): {
+                Value result = stack.Pop();
+                CloseUpvalues(frame->slots);
 
-            DISPATCH();
-        }
+                stack.RemoveFrame();
+                stack.Push(result);
 
-        CASE(DICT): {
-            ObjDict* newDict = ObjDict::New(*this);
-            stack.Push(newDict);
-
-            DISPATCH();
-        }
-
-        CASE(THING): {
-            ObjThing* newThing = ObjThing::New(*this);
-            stack.Push(newThing);
-
-            DISPATCH();
-        }
-
-        CASE(CATEGORY): {
-            ObjCategory* newCategory = ObjCategory::New(*this);
-            stack.Push(newCategory);
-
-            DISPATCH();
-        }
-
-        CASE(APPEND): {
-            ObjList* list = stack.Peek(1).AsObj<ObjList>();
-            list->Append(stack.Pop());
-            
-            DISPATCH();
-        }
-
-        CASE(DEFINE_ENTRY): {
-            ObjDict* dictionary = stack.Peek(2).AsObj<ObjDict>();
-            const Value& key = stack.Peek(1);
-            const Value& value = stack.Peek(0);
-
-            dictionary->Set(key, value);
-
-            stack.Pop();
-            stack.Pop();
-
-            DISPATCH();
-        }
-
-        CASE(GET_INDEX): {
-            //    stack.Peek(1)     stack.Peek(0)
-            // [ collection ][ index ]
-            //                 ^^^^^ stackTop. You are here.
-            Value& collection = stack.Peek(1);
-            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
+                return;
             }
-            
-            switch (collection.AsObj()->type) {
-                case ObjType::LIST: {
-                    if (!stack.Peek(0).IsInteger()) RuntimeError("List index must be an integer.");
-                    
-                    ObjList* list = collection.AsObj<ObjList>();
-                    int index = stack.Peek(0).AsInteger();
-                    const Value* value = list->Get(index);
-
-                    stack.Pop(); // Index
-                    stack.Pop(); // Collection
-
-                    // Leave only the value of the indexed list.
-                    stack.Push(*value);
-
-                    break;
-                }
-
-                case ObjType::DICT: {
-                    ObjDict* dict = collection.AsObj<ObjDict>();
-
-                    Value& key = stack.Peek(0);
-                    const Value* value = dict->Get(key);
-                    if (value == nullptr) {
-                        
-                        RuntimeError("Could not find key in dictionary.");
-                    }
-
-                    stack.Pop(); // Key
-                    stack.Pop(); // Collection
-                    
-                    stack.Push(*value);
-
-                    break;
-                }
-            }
-
-            DISPATCH();
-        }
-        
-        CASE(SET_INDEX): {
-            //     stack.Peek(2)    stack.Peek(1)    stack.Peek(0)
-            // [ collection ][ index ][ newValue ]
-            //                                    ^^^^^^ stackTop. You are here.
-            Value& collection = stack.Peek(2);
-            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                RuntimeError("Value of type '%s' is not indexable.", stack.Peek(2).StringType());
-            }
-
-            Value newValue = stack.Peek(0);
-
-            switch (collection.AsObj()->type) {
-                case ObjType::LIST: {
-                    // Lists must always have integers as indices.
-                    if (!stack.Peek(1).IsInteger()) RuntimeError("List index must be an integer.");
-                    
-                    ObjList* list = collection.AsObj<ObjList>();
-                    int index = stack.Peek(1).AsInteger();
-                    list->Set(index, newValue); 
-
-                    break;
-                }
-
-                case ObjType::DICT: {
-                    ObjDict* dictionary = collection.AsObj<ObjDict>();
-
-                    // Dictionaries have Lua semantics, where setting a key to nil
-                    // removes the entry entirely.
-                    // (i.e. a["hello"] <- nil removes the "hello" key as well, and
-                    // won't be counted in loops.)
-
-                    Value key = stack.Peek(1);
-                    if (newValue.IsNil()) {
-                        dictionary->Delete(key);
-                    } else {
-                        dictionary->Set(key, newValue);
-                    }
-
-                    break;
-                }
-            }
-
-            stack.Pop(); // New value
-            stack.Pop(); // Index
-            stack.Pop(); // Collection
-
-            stack.Push(newValue);
-
-            DISPATCH();
         }
 
-        CASE(GET_ATTRIBUTE): {
-            ObjString* attributeName = READ_STRING();
-
-            if (stack.Peek(0).IsObj(ObjType::CATEGORY)) {
-                ObjCategory* category = stack.Peek(0).AsObj<ObjCategory>();
-                const Value* type = category->GetType(attributeName);
-                if (type == nullptr) {
-                    RuntimeError("Type '%s' does not exist in category.", attributeName->characters);
-                }
-
-                stack.Pop(); // Category
-                stack.Push(*type);
-
-                DISPATCH();
-            }
-
-            if (stack.Peek(0).IsObj(ObjType::THING)) {
-                ObjThing* thing = stack.Peek(0).AsObj<ObjThing>();
-                const Value* value = thing->Get(attributeName);
-                if (value == nullptr) {
-                    RuntimeError("Thing has no attribute named '%s'.", attributeName->characters);
-                }
-                
-                stack.Pop(); // Thing
-                stack.Push(*value);
-
-                DISPATCH();
-            }
-
-            ObjThing* proto = GetProtoOf(stack.Peek(0));
-            if (proto && proto->Get(attributeName) != nullptr) {
-                const Value* value = proto->Get(attributeName);
-                if (value == nullptr) {
-                    RuntimeError("Could not find '%s' in value.", attributeName->characters);
-                }
-
-                stack.Pop();
-                stack.Push(*value);
-
-                DISPATCH();
-            }
-            
-            RuntimeError(
-                "Type '%s' does not support attributes.", 
-                stack.Peek(0).StringType()
-            );
-
-            DISPATCH();
-        }
-
-        CASE(SET_ATTRIBUTE): {
-            // [ <thing> ][ 5 ]
-            //   ^^^^^^^   ^^^   ^^^^^^
-            //   object   value  stackTop
-            //   stack.Peek(1)  stack.Peek(0)
-
-            ObjString* attributeName = READ_STRING();
-            Value object = stack.Peek(1);
-            Value value = stack.Peek(0);
-
-            if (object.IsObj(ObjType::THING)) {
-                ObjThing* thing = object.AsObj<ObjThing>();
-                if (value.IsNil()) {
-                    thing->Delete(attributeName);
-                } else {
-                    thing->Set(attributeName, value);
-                }
-
-                stack.Pop();
-                stack.Pop();
-                stack.Push(value); // Push the value back since assignments leave the value on the stack.
-                
-                DISPATCH();
-            }
-
-            if (object.IsObj(ObjType::CATEGORY)) {
-                ObjCategory* category = object.AsObj<ObjCategory>();
-
-                // Note that we cannot add new kinds after the category literal.
-                // category->AddType will error for us when we try and re-define
-                // an attribute that has already been defined.
-                category->AddType(attributeName, value);
-                stack.Pop();
-
-                DISPATCH();
-            }
-
-            RuntimeError(
-                "Attribute '%s' does not exist in value of type '%s'.", 
-                attributeName->characters, 
-                stack.Peek(0).StringType()
-            );
-        }
-        
-        CASE(PRINT): {
-            Value::Print(stack.Pop());
-            std::printf("\n");
-            
-            DISPATCH();
-        }
-
-        CASE(RETURN): {
-            Value result = stack.Pop();
-            CloseUpvalues(frame->slots);
-
-            stack.RemoveFrame();
-            stack.Push(result);
-
-            return;
-        }
+        isShortOp = false;
     }
-
-    ASSERT(0, "Unknown opcode.");
 
     #undef READ_BYTE
     #undef READ_CONSTANT
