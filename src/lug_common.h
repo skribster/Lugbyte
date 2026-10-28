@@ -31,7 +31,7 @@
         {                                                                               \
             if (!(condition))                                                           \
             {                                                                           \
-            std::fprintf(stderr, "[%s:%d] Assert failed in %s(): %s\n",                 \
+            std::fprintf(stderr, "[%s:%d] assert failed in %s(): %s\n",                 \
                 __FILE__, __LINE__, __func__, message);                                 \
             std::abort();                                                               \
             }                                                                           \
@@ -40,7 +40,7 @@
     #define UNREACHABLE()                                                               \
         do                                                                              \
         {                                                                               \
-            std::fprintf(stderr, "[%s:%d] This code should not be reached in %s()\n",   \
+            std::fprintf(stderr, "[%s:%d] this code should not be reached in %s()\n",   \
                 __FILE__, __LINE__, __func__);                                          \
             std::abort();                                                               \
         } while (false)

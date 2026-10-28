@@ -68,7 +68,7 @@ static std::uint32_t HashPointer(void* pointer) {
 // Obj methods ------------------------------------
 
 void Obj::Print() {
-    std::printf("Unknown object type '%d'\n", static_cast<int>(type));
+    std::printf("unknown object type '%d'\n", static_cast<int>(type));
     UNREACHABLE();
 }
 
@@ -92,7 +92,7 @@ const char* Obj::StringType(ObjType type) {
         case ObjType::FUNCTION: return "FUNCTION_IMPL";
 
         default: 
-            std::printf("Unknown object type '%d'\n", static_cast<int>(type));
+            std::printf("unknown object type '%d'\n", static_cast<int>(type));
             UNREACHABLE();
         
     }
@@ -251,12 +251,17 @@ ObjFunction::~ObjFunction() {
 
 
 void ObjFunction::Print() {
-    if (name == nullptr) {
-        std::printf("<script>");
+    if (name != nullptr) {
+        std::printf("<fn %s>", name->characters);
         return;
     }
-            
-    std::printf("<fn %s>", name->characters);
+    
+    if (sourcePath != nullptr) {
+        std::printf("<%s>", sourcePath->characters);
+        return;
+    }
+
+    std::printf("<script>");
 }
 
 // ObjUpvalue methods ------------------------------------
@@ -395,7 +400,7 @@ int ObjList::ClampIndex(int index) const {
 
 void ObjList::Set(int index, Value value) {
     index = ClampIndex(index);
-    if (index == -1) vm.RuntimeError("Index '%d' out of range.", index);
+    if (index == -1) vm.RuntimeError("index '%d' out of range", index);
     items[index] = value;
 }
 
@@ -531,14 +536,14 @@ void ObjCategory::AddType(ObjString* typeName, Value& index) {
     if (index.IsNil()) {
         isNewType = types.Set(typeName, currentIndex);
     } else {
-        if (!index.IsInteger()) vm.RuntimeError("Cannot assign a category type as '%s'", index.StringType());
+        if (!index.IsInteger()) vm.RuntimeError("cannot assign a category type as '%s'", index.StringType());
         
         isNewType = types.Set(typeName, index);
         currentIndex = index.AsInteger();
     }
 
     if (!isNewType) {
-        vm.RuntimeError("Cannot re-define category type '%s'.", typeName->characters);
+        vm.RuntimeError("cannot re-define category type '%s'", typeName->characters);
     }
     
     currentIndex++;

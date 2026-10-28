@@ -131,7 +131,7 @@ public:
         Clear();
         Memory::FreeArray(vm, data, capacity);
 
-        ASSERT(&vm == &other.vm, "Can't move-assign vectors with different VMs");
+        ASSERT(&vm == &other.vm, "can't move-assign vectors with different VMs");
         data = other.data;
         count = other.count;
         capacity = other.capacity;
@@ -205,12 +205,12 @@ public:
     // Index operator ------------------
 
     T& operator[](std::size_t index) {
-        ASSERT(index < count, "Index out of bounds");
+        ASSERT(index < count, "index out of bounds");
         return data[index];
     }
 
     const T& operator[](std::size_t index) const {
-        ASSERT(index < count, "Index out of bounds");
+        ASSERT(index < count, "index out of bounds");
         return data[index];
     }
 

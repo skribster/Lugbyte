@@ -24,7 +24,7 @@ static Value Sqrt(VMCore& vm, Value* args, std::size_t argCount) {
 
     double number = args[0].AsNumber();
     if (number < 0) {
-        vm.RuntimeError("Can't square root a negative number.");
+        vm.RuntimeError("can't square root a negative number");
     }
 
     return std::sqrt(number);
@@ -42,7 +42,7 @@ static Value Clamp(VMCore& vm, Value* args, std::size_t argCount) {
     double hi = args[2].AsNumber();
 
     if (lo > hi) {
-        vm.RuntimeError("Lower limit of clamp is greater than the upper limit.");
+        vm.RuntimeError("lower limit of clamp is greater than the upper limit");
     }
 
     if (value < lo) value = lo;

@@ -3,6 +3,7 @@
 #include <string_view>
 #include <string>
 #include <memory>
+#include <filesystem>
 
 namespace Luggage {
 
@@ -66,7 +67,7 @@ public:
 
         You can get the last error with VM::LastError().
     */
-    [[nodiscard]] bool Interpret(std::string_view source);
+    [[nodiscard]] bool Interpret(std::filesystem::path module, std::string_view source);
     const LugError& LastError() const;
 
 private:

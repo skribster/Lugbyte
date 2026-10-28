@@ -366,7 +366,7 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
         }
 
         default: {
-            std::printf("UNKNOWN OPCODE '%d'\n", instruction);
+            std::printf("unknown opcode '%d'\n", instruction);
             return offset + 1;
         }
     }

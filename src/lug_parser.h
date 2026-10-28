@@ -6,7 +6,7 @@ namespace Luggage {
 
 class Parser {
 public:
-    void Reset(const char* source);
+    void Reset(const char* source, std::filesystem::path modulePath);
 
 	void Advance();
     void Consume(TokenType type, const char* errorMessage);
@@ -28,6 +28,7 @@ public:
     
 private:
     Lexer lexer;
+    std::filesystem::path modulePath;
 };
 
 }

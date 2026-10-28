@@ -7,4 +7,4 @@ box Fruit <- category
     MANGO
 end
 
-print(Fruit.WATERMELON)      // expect: Type 'WATERMELON' does not exist in category
+print(Fruit.WATERMELON)      // expect: type 'WATERMELON' does not exist in category

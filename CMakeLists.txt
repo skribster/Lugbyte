@@ -28,6 +28,7 @@ target_sources(luggage_core
         src/lug_value.cpp
         src/lug_vm.cpp
         src/lug_gc.cpp
+        src/lug_filesys.cpp
     PUBLIC 
         FILE_SET HEADERS
         BASE_DIRS include

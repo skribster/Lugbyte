@@ -1,1 +1,1 @@
-[line 2] Error at '<-': Invalid assignment target.
+tests:2: error at '<-': invalid assignment target

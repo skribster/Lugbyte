@@ -74,7 +74,7 @@ static Value Get(VMCore& vm, Value* args, std::size_t argCount) {
 
     ObjList* list = args[0].AsObj<ObjList>();   
     if (!args[1].IsInteger()) {
-        vm.RuntimeError("Expected an integer for the index.");
+        vm.RuntimeError("expected an integer for the index");
     }
 
     int index = args[1].AsInteger();

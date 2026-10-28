@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include "lug_common.h"
 
 namespace Luggage {
@@ -37,6 +38,7 @@ enum class TokenType {
     IDENTIFIER,
     STRING,
     NUMBER,
+    ERROR,
 
     // Keywords
     AND,
@@ -98,7 +100,7 @@ public:
     Token ScanToken();
     
 private:
-    [[noreturn]] void LexError(const char* message);
+    Token ErrorToken(const char* message);
     Token MakeToken(TokenType type);
     
     Token Identifier();

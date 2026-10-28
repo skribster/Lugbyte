@@ -11,7 +11,7 @@ namespace Luggage::Lib {
     
 void CheckArgc(VMCore& vm, std::size_t argc, std::size_t expected) {
     if (argc != expected) {
-        vm.RuntimeError("Expected %zu argument(s), got %zu", argc, expected);
+        vm.RuntimeError("expected %zu argument(s), got %zu", argc, expected);
     }
 };
 

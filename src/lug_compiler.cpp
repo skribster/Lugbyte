@@ -39,7 +39,7 @@ void FunctionUnit::EndScope() {
  */
 void FunctionUnit::AddLocal(Token name) {
     if (localCount == UINT8_COUNT) {
-        parser.Error("Too many local variables in function.");
+        parser.Error("too many local variables in function");
     }
 
     /*
@@ -67,7 +67,7 @@ void FunctionUnit::AddLocal(Token name) {
         }
 
         if (local.name == name) {
-            parser.Error("Already a variable with this name in this scope.");
+            parser.Error("already a variable with this name in this scope");
         }
     }
 
@@ -103,7 +103,7 @@ std::size_t FunctionUnit::AddUpvalue(std::uint8_t slotIndex, bool isLocal) {
     }
 
     if (upvalueCount == UINT8_COUNT) {
-        parser.Error("Too many closure variables in function.");
+        parser.Error("too many closure variables in function");
         return 0;
     }
     
@@ -148,7 +148,7 @@ int FunctionUnit::ResolveLocal(const Token& name) const {
             */
 
             if (!local.initialized) {
-                parser.Error("Can't read local variable in its own initializer.");
+                parser.Error("can't read local variable in its own initializer");
             }
 
             return slot;
@@ -233,9 +233,9 @@ void FunctionUnit::MarkInitialized() {
 
 // Compiler public methods -----------------------------
 
-ObjFunction* Compiler::Compile(const char* source) {
-    parser.Reset(source);
-
+ObjFunction* Compiler::Compile(const char* source, std::filesystem::path modulePath) {
+    parser.Reset(source, modulePath);
+    currentScriptPath = modulePath;
     FunctionUnit unit{ vm, *this, parser };
     PushUnit(&unit, FunctionType::SCRIPT);
 
@@ -277,8 +277,11 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->enclosing = currentUnit;
     currentUnit = unit;
     
-    if (type != FunctionType::SCRIPT) {
+    if (type == FunctionType::SCRIPT) {
+        unit->function->sourcePath = ObjString::FromLiteral(vm, currentScriptPath.string().c_str());
+    } else {
         unit->function->name = ObjString::FromSource(vm, pendingName.start, pendingName.length);
+        unit->function->sourcePath = ObjString::FromLiteral(vm, unit->enclosing->function->sourcePath->characters);
     }
 
     /*
@@ -302,7 +305,7 @@ ObjFunction* Compiler::PopUnit() {
         *CurrentChunk(), 
         function->name != nullptr 
         ? function->name->characters 
-        : "<script>"
+        : function->sourcePath->characters
     );
 #endif
 
@@ -396,7 +399,7 @@ std::uint16_t Compiler::MakeConstant(Value value) {
     // make sure the indices don't exceed that limit. 
     std::size_t constant = CurrentChunk()->AddConstant(value);
     if (constant > UINT16_MAX) {
-        parser.Error("Too many constants in one chunk.");
+        parser.Error("too many constants in one chunk");
         return 0;
     }
 
@@ -523,7 +526,7 @@ void Compiler::PatchJump(std::size_t instructionOffset) {
      */
     std::size_t numBytesToJump = CurrentChunk()->bytecode.Count() - instructionOffset - 2;
     if (numBytesToJump > UINT16_MAX) {
-        parser.Error("Too much code to jump over.");
+        parser.Error("too much code to jump over");
     }
 
     CurrentChunk()->bytecode[instructionOffset] = (numBytesToJump >> 8) & 0xff;
@@ -541,7 +544,7 @@ void Compiler::EmitLoop(OpCode::Type loopInstruction, std::size_t loopStart) {
     // the +2 is to account for OP_LOOP's operands, which we also need
     // to jump over.
     std::size_t loopOffset = CurrentChunk()->bytecode.Count() - loopStart + 2;
-    if (loopOffset > UINT16_MAX) parser.Error("Loop body too large.");
+    if (loopOffset > UINT16_MAX) parser.Error("loop body too large");
 
     EmitByte((loopOffset >> 8) & 0xff);
     EmitByte(loopOffset & 0xff);
@@ -667,11 +670,11 @@ void Compiler::PatchPlaceholders(std::size_t firstPlaceholder, OpCode::Type inst
         // The past operand was how many bytes the next break statement was
         // relative to the current one we're on. 
         int nextPlaceholder = currentPlaceholder - operand;
-        ASSERT(nextPlaceholder > 0, "Next-break index in the patch loop is negative.");
+        ASSERT(nextPlaceholder > 0, "next-break index in the patch loop is negative");
         currentPlaceholder = nextPlaceholder;
 
         bool isPlaceholder = chunk.bytecode[nextPlaceholder] == OpCode::PLACEHOLDER;
-        ASSERT(isPlaceholder, "OP_PLACEHOLDER index led to a non-placeholder opcode.");
+        ASSERT(isPlaceholder, "op_placeholder index led to a non-placeholder opcode");
     }
 }
 
@@ -732,7 +735,7 @@ bool Compiler::Statement() {
         currentUnit->BeginScope();
         Block();
         currentUnit->EndScope();
-        parser.Consume(TokenType::END, "Expected 'end' after block.");
+        parser.Consume(TokenType::END, "expected 'end' after block");
     }
 
     else if (parser.Match(TokenType::IF)) {
@@ -788,7 +791,7 @@ void Compiler::PrintStatement() {
 
 
 void Compiler::BoxStatement() {
-    std::uint16_t global = ParseVariable("Expected variable name.");
+    std::uint16_t global = ParseVariable("expected variable name");
     pendingName = parser.previous;
 
     if (parser.Match(TokenType::LEFT_ARROW)) {
@@ -815,7 +818,7 @@ void Compiler::Block() {
 
 void Compiler::IfStatement() {
     Expression(); // Condition
-    parser.Consume(TokenType::THEN, "Expected 'then' after condition.");
+    parser.Consume(TokenType::THEN, "expected 'then' after condition");
 
     // Then clause
     std::size_t jumpOverThen = EmitJump(OpCode::POP_JUMP_IF_FALSE);
@@ -865,7 +868,7 @@ void Compiler::IfStatement() {
     }
 
     PatchJump(jumpToEnd);
-    parser.Consume(TokenType::END, "Expected 'end' after if statement.");
+    parser.Consume(TokenType::END, "expected 'end' after if statement");
 }
 
 
@@ -876,14 +879,14 @@ void Compiler::WhileStatement() {
     // Loop condition
     Expression();
     loop.exitJump = EmitJump(OpCode::POP_JUMP_IF_FALSE);
-    parser.Consume(TokenType::DO, "Expected 'do' after while condition.");
+    parser.Consume(TokenType::DO, "expected 'do' after while condition");
     
     // Inside loop
     currentUnit->BeginScope();
     Block();
     currentUnit->EndScope();
 
-    parser.Consume(TokenType::END, "Expected 'end' after while loop.");
+    parser.Consume(TokenType::END, "expected 'end' after while loop");
 
     EndLoop();
 }
@@ -922,11 +925,11 @@ void Compiler::InspectStatement() {
         PatchPlaceholders(bodyJumps, OpCode::POP_JUMP_IF_TRUE);
         
         // Parse the body.
-        parser.Consume(TokenType::DO, "Expected 'do' after case conditions.");
+        parser.Consume(TokenType::DO, "expected 'do' after case conditions");
         currentUnit->BeginScope();
         Block();
         currentUnit->EndScope();
-        parser.Consume(TokenType::END, "Expected 'end' after 'when' body.");
+        parser.Consume(TokenType::END, "expected 'end' after 'when' body");
 
         // After the block, we want to skip every other case.
         AddPlaceholder(&exitJumps);
@@ -940,7 +943,7 @@ void Compiler::InspectStatement() {
         currentUnit->BeginScope();
         Block();
         currentUnit->EndScope();
-        parser.Consume(TokenType::END, "Expected 'end' after else body.");
+        parser.Consume(TokenType::END, "expected 'end' after else body");
     }
     
     // After all the when statements, we want to patch all the end-of-when jumps
@@ -949,7 +952,7 @@ void Compiler::InspectStatement() {
     // To get rid of the original expression we compared to.
     EmitByte(OpCode::POP);
 
-    parser.Consume(TokenType::END, "Expected 'end' after 'when' clauses.");
+    parser.Consume(TokenType::END, "expected 'end' after 'when' clauses");
 }
 
 
@@ -961,19 +964,19 @@ void Compiler::CountStatement() {
     currentUnit->BeginScope();
 
     // Parse the counter as a new local.
-    ParseVariable("Expected variable name.");
+    ParseVariable("expected variable name");
     DefineVariable(0);
     
     int counter = currentUnit->ResolveLocal(parser.previous);
-    ASSERT(counter != -1, "Counter's slot is -1 and cannot be found");
+    ASSERT(counter != -1, "counter's slot is -1 and cannot be found");
     
     // Start --------------------------
-    parser.Consume(TokenType::FROM, "Expected 'from' after incrementer name.");
+    parser.Consume(TokenType::FROM, "expected 'from' after incrementer name");
     Expression();
     EmitBytes(OpCode::SET_LOCAL, counter);
     
     // Condition --------------------------
-    parser.Consume(TokenType::ELLIPSIS, "Expected '...' after start value.");
+    parser.Consume(TokenType::ELLIPSIS, "expected '...' after start value");
     Expression();
     currentUnit->AddHiddenLocal("$limit");
     
@@ -994,9 +997,9 @@ void Compiler::CountStatement() {
     currentUnit->BeginScope();
     StartLoop(loop);
 
-    parser.Consume(TokenType::DO, "Expected 'do' after count clauses.");
+    parser.Consume(TokenType::DO, "expected 'do' after count clauses");
     Block();
-    parser.Consume(TokenType::END, "Expected 'end' after count statement.");
+    parser.Consume(TokenType::END, "expected 'end' after count statement");
 
     currentUnit->EndScope();
     EndLoop();
@@ -1018,18 +1021,18 @@ void Compiler::ForeachStatement() {
 
     // Start by parsing the 'value' local and adding it as a local variable.
     EmitByte(OpCode::NIL);
-    ParseVariable("Expected item name after 'foreach'.");
+    ParseVariable("expected item name after 'foreach'");
     DefineVariable(0);
     
     // If we match 'at', that means we also have a variable for the key.
     // The key will hold the value of '0' for now.
     EmitByte(OpCode::NIL);
     if (parser.Match(TokenType::AT)) {
-        ParseVariable("Expected key name after 'at'.");
+        ParseVariable("expected key name after 'at'");
         DefineVariable(0);
     }
     
-    parser.Consume(TokenType::IN, "Expected 'in' after item name.");
+    parser.Consume(TokenType::IN, "expected 'in' after item name");
     Expression();
     currentUnit->AddHiddenLocal("$iterator");
 
@@ -1042,9 +1045,9 @@ void Compiler::ForeachStatement() {
     currentUnit->BeginScope();
     StartLoop(loop);
 
-    parser.Consume(TokenType::DO, "Expected 'do' after foreach clauses.");
+    parser.Consume(TokenType::DO, "expected 'do' after foreach clauses");
     Block();
-    parser.Consume(TokenType::END, "Expected 'end' after foreach statement.");
+    parser.Consume(TokenType::END, "expected 'end' after foreach statement");
 
     currentUnit->EndScope();
     EndLoop();
@@ -1055,7 +1058,7 @@ void Compiler::ForeachStatement() {
 
 void Compiler::BreakStatement() {
     if (currentLoop == nullptr) {
-        parser.Error("Can't use 'break' outside of a loop.");
+        parser.Error("can't use 'break' outside of a loop");
     }
 
     // Discard any locals currently inside the loop.
@@ -1066,7 +1069,7 @@ void Compiler::BreakStatement() {
 
 void Compiler::ContinueStatement() {
     if (currentLoop == nullptr) {
-        parser.Error("Can't use 'continue' outside of a loop.");
+        parser.Error("can't use 'continue' outside of a loop");
     }
 
     /*
@@ -1080,7 +1083,11 @@ void Compiler::ContinueStatement() {
 
 void Compiler::ReturnStatement() {
     if (currentUnit->type == FunctionType::SCRIPT) {
-        parser.Error("Cannot return from top-level code.");
+        if (parser.IsAtEnd()) parser.Error("top-level module return statement must return a value");
+        Expression();
+        EmitByte(OpCode::RETURN);
+
+        return;
     }
 
     if (!parser.Check(TokenType::END, TokenType::ELSEIF, TokenType::ELSE)) {
@@ -1097,7 +1104,7 @@ void Compiler::ExpressionStatement() {
     Expression();
 
     if (!isValidExprStmt) {
-        parser.Error("Expected a statement.");
+        parser.Error("expected a statement");
     }
 
     EmitByte(OpCode::POP);
@@ -1139,6 +1146,7 @@ const ParseRule Compiler::rules[] = {
     { &Compiler::Variable,      nullptr,                Precedence::NONE },             // IDENTIFIER
     { &Compiler::String,        nullptr,                Precedence::NONE },             // STRING
     { &Compiler::Number,        nullptr,                Precedence::NONE },             // NUMBER
+    { nullptr,                  nullptr,                Precedence::NONE },             // ERROR
 
     // Keywords         
     { nullptr,                  &Compiler::And,         Precedence::AND },              // AND
@@ -1183,7 +1191,7 @@ const ParseRule& Compiler::GetRule(TokenType type) const {
     static_assert(
         sizeof(Compiler::rules) / sizeof(ParseRule)
         == static_cast<int>(TokenType::END_OF_FILE) + 1, 
-        "Rule array and tokens are mismatched"
+        "rule array and tokens are mismatched"
     );
 
     std::size_t ruleIndex = static_cast<std::size_t>(type);
@@ -1243,7 +1251,7 @@ void Compiler::MarkGetter() {
  */
 void Compiler::Grouping(bool canAssign) {
     Expression();
-    parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after expression.");
+    parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after expression");
 
     // This is to allow bare expressions like (42) as statements.
     isValidExprStmt = true;
@@ -1301,14 +1309,14 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
             }
             
             if (arguments.arity == 255) {
-                parser.Error("Can't have more than 255 arguments.");
+                parser.Error("can't have more than 255 arguments");
             }
 
             arguments.arity++;
         } while (parser.Match(TokenType::COMMA));
     }   
 
-    parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after arguments.");
+    parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after arguments");
 
     return arguments;
 }
@@ -1319,7 +1327,7 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
  */
 void Compiler::Index(bool canAssign) {
     Expression();
-    parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after index.");
+    parser.Consume(TokenType::RIGHT_BRACKET, "expected ']' after index");
 
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
         StoredExpression();
@@ -1336,9 +1344,9 @@ void Compiler::Dot(bool canAssign) {
     // Can either be a . or :
     Token dotted = parser.previous;
     if (dotted.type == TokenType::COLON) {
-        parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after ':'");
+        parser.Consume(TokenType::IDENTIFIER, "expected attribute name after ':'");
     } else {
-        parser.Consume(TokenType::IDENTIFIER, "Expected attribute name after '.'");
+        parser.Consume(TokenType::IDENTIFIER, "expected attribute name after '.'");
     }
 
     Token name = parser.previous;
@@ -1352,7 +1360,7 @@ void Compiler::Dot(bool canAssign) {
         a.append(share a)
     */
     if (dotted.type == TokenType::COLON) {
-        parser.Consume(TokenType::LEFT_PAREN, "Expected function call after colon-accessed attribute.");
+        parser.Consume(TokenType::LEFT_PAREN, "expected function call after colon-accessed attribute");
 
         EmitShortable(OpCode::SELF, nameConstant);
         ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT - 1);
@@ -1560,7 +1568,7 @@ void Compiler::Function(bool canAssign) {
     PushUnit(&unit, FunctionType::FUNCTION);
 
     currentUnit->BeginScope();
-    parser.Consume(TokenType::LEFT_PAREN, "Expected '(' after 'function'.");
+    parser.Consume(TokenType::LEFT_PAREN, "expected '(' after 'function'");
     
     // Parse arguments
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
@@ -1570,12 +1578,12 @@ void Compiler::Function(bool canAssign) {
 
             parameters.arity++;
             if (parameters.arity > UINT8_MAX) {
-                parser.ErrorAtCurrent("Can't have more than 255 parameters.");
+                parser.ErrorAtCurrent("can't have more than 255 parameters");
             }
 
             if (parser.Match(TokenType::SHARED)) {
                 if (parameters.arity > 8) {
-                    parser.ErrorAtCurrent("Can't define shared parameters after the 8th parameter.");
+                    parser.ErrorAtCurrent("can't define any moreshared parameters after the 8th parameter");
                 }
 
                 /*
@@ -1590,15 +1598,15 @@ void Compiler::Function(bool canAssign) {
                 parameters.MarkShared(parameters.arity - 1);
             }
 
-            std::uint8_t constant = ParseVariable("Expected parameter name.");
+            std::uint8_t constant = ParseVariable("expected parameter name");
             DefineVariable(constant);
         } while (parser.Match(TokenType::COMMA));
     }
 
-    parser.Consume(TokenType::RIGHT_PAREN, "Expected ')' after parameters.");
+    parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after parameters");
 
     Block();
-    parser.Consume(TokenType::END, "Expected 'end' after function body.");
+    parser.Consume(TokenType::END, "expected 'end' after function body");
 
     ObjFunction* function = PopUnit();
     EmitShortable(OpCode::CLOSURE, MakeConstant(function));
@@ -1626,7 +1634,7 @@ void Compiler::List(bool canAssign) {
         } while (parser.Match(TokenType::COMMA));
     }
 
-    parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after list literal.");
+    parser.Consume(TokenType::RIGHT_BRACKET, "expected ']' after list literal");
 }
 
 
@@ -1642,7 +1650,7 @@ void Compiler::Dictionary(bool canAssign) {
                 // something like a <- 4 <- "hello" confuses the parser because we
                 // don't know which '<-' denotes the key-value separation.
                 StoredExpression();
-                parser.Consume(TokenType::RIGHT_BRACKET, "Expected ']' after key.");
+                parser.Consume(TokenType::RIGHT_BRACKET, "expected ']' after key");
 
             } else if (parser.Match(TokenType::IDENTIFIER)) { 
                 EmitIdentifier(parser.previous);
@@ -1653,14 +1661,14 @@ void Compiler::Dictionary(bool canAssign) {
                 ParsePrecedence(Precedence::PRIMARY);
             }
 
-            parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after key.");
+            parser.Consume(TokenType::LEFT_ARROW, "expected '<-' after key");
             Expression();
             EmitByte(OpCode::DEFINE_ENTRY);
             
         } while (parser.Match(TokenType::COMMA));
     }
 
-    parser.Consume(TokenType::RIGHT_BRACE, "Expected '}' after list literal.");
+    parser.Consume(TokenType::RIGHT_BRACE, "expected '}' after list literal");
 }
 
 
@@ -1684,10 +1692,10 @@ void Compiler::Thing(bool canAssign) {
         if (!parser.Match(TokenType::RIGHT_BRACE)) {
             do {
                 EmitByte(OpCode::DUPLICATE);
-                parser.Consume(TokenType::IDENTIFIER, "Expected attribute name.");
+                parser.Consume(TokenType::IDENTIFIER, "expected attribute name");
                 std::uint16_t attributeName = IdentifierConstant(parser.previous);
 
-                parser.Consume(TokenType::LEFT_ARROW, "Expected '<-' after attribute name.");
+                parser.Consume(TokenType::LEFT_ARROW, "expected '<-' after attribute name");
 
                 StoredExpression();
 
@@ -1695,7 +1703,7 @@ void Compiler::Thing(bool canAssign) {
                 EmitByte(OpCode::POP);
             } while (parser.Match(TokenType::COMMA));
 
-            parser.Consume(TokenType::RIGHT_BRACE, "Expected '}' after initializers.");
+            parser.Consume(TokenType::RIGHT_BRACE, "expected '}' after initializers");
         }
     }
 }
@@ -1720,7 +1728,7 @@ void Compiler::Category(bool canAssign) {
     if (!parser.Match(TokenType::END)) {
         EmitByte(OpCode::DUPLICATE);
         do {
-            parser.Consume(TokenType::IDENTIFIER, "Expected category kind.");
+            parser.Consume(TokenType::IDENTIFIER, "expected category kind");
             std::uint16_t type = IdentifierConstant(parser.previous);
             
             // Optional assignment
@@ -1734,7 +1742,7 @@ void Compiler::Category(bool canAssign) {
             
         } while (parser.Match(TokenType::COMMA));
         
-        parser.Consume(TokenType::END, "Expected 'end' after category kinds.");
+        parser.Consume(TokenType::END, "expected 'end' after category kinds");
         EmitByte(OpCode::POP);
     }
 
@@ -1805,7 +1813,7 @@ void Compiler::ParsePrecedence(Precedence minimumPrecedence) {
 
     ParseFn prefixRule = GetRule(parser.previous.type).prefix;
     if (prefixRule == nullptr) {
-        parser.ErrorAt(parser.previous, "Expected expression.");
+        parser.ErrorAt(parser.previous, "expected expression");
         return;
     }
 
@@ -1819,7 +1827,7 @@ void Compiler::ParsePrecedence(Precedence minimumPrecedence) {
     }
 
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {
-        parser.Error("Invalid assignment target.");
+        parser.Error("invalid assignment target");
     }
 }
 

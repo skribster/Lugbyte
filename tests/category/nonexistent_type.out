@@ -1,2 +1,3 @@
-Type 'WATERMELON' does not exist in category.
-[line 10] in script
+runtime error: type 'WATERMELON' does not exist in category
+stack traceback:
+    tests:10: in script

@@ -41,6 +41,11 @@ struct Stack {
         return &frames[frameCount - 1];
     }
 
+    inline std::filesystem::path CurrentModulePath() {
+        ObjString* sourcePath = GetFrame()->closure->function->sourcePath;
+        return std::filesystem::path(sourcePath->characters);
+    }
+
     inline void RemoveFrame() {
         top = GetFrame()->slots;
         frameCount--;
@@ -81,9 +86,9 @@ class VMCore {
 public:
     VMCore();
   
-    bool Interpret(std::string_view source);
-
+    bool Interpret(std::string_view source, std::filesystem::path sourcePath);
     void DefineNative(const char* name, NativeFn function);
+    ObjFunction* LoadModule(std::filesystem::path modulePath);
     
     // Garbage collector methods ----------
     void AddObject(Obj* obj);
@@ -99,18 +104,21 @@ public:
     ObjString* ToString(Value value);
     Value Deepcopy(const Value& value);
     
+    std::string StackTraceback();
+    template<typename... Args>
+    [[noreturn]] void RuntimeError(const char* format, Args... args);
+    
     // Member variables -------------------
-    Table strings;
-    Table globals;
-    Stack stack;
-
-    ObjUpvalue* openUpvalues{ nullptr };
-
     Compiler compiler;
     GC gc;
 
-    template<typename... Args>
-    [[noreturn]] void RuntimeError(const char* format, Args... args);
+    Table strings;
+    Table globals;
+    Table modules;
+
+    Stack stack;
+
+    ObjUpvalue* openUpvalues{ nullptr };
     
 private:
     void Concatenate();
@@ -134,26 +142,10 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     std::snprintf(formatted.data(), static_cast<std::size_t>(length) + 1, message, args...);
 
     std::string errorMessage;
+    errorMessage += "runtime error: ";
     errorMessage += formatted;
     errorMessage += '\n';
-
-    for (int i = stack.frameCount - 1; i >= 0; i--) {
-        CallFrame& frame = stack.frames[i];
-        ObjFunction* function = frame.closure->function;
-        std::size_t instruction = frame.ip - function->chunk.bytecode.Data() - 1;
-        std::size_t line = function->chunk.GetLine(instruction);
-
-        errorMessage += "[line ";
-        errorMessage += std::to_string(line);
-        errorMessage += "] in ";
-
-        if (function->name == nullptr) {
-            errorMessage += "script\n";
-        } else {
-            errorMessage.append(function->name->characters);
-            errorMessage += "()\n";
-        }
-    }
+    errorMessage += StackTraceback();
 
     LugError error;
     error.type = ErrorType::RUNTIME;

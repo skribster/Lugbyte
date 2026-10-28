@@ -95,7 +95,7 @@ TEST_P(LugScriptTest, TestSingleFile) {
 
     Luggage::VM vm;
     vm.LoadLibrary(Luggage::LibInclude::ALL);
-    bool success = vm.Interpret(source);
+    bool success = vm.Interpret("tests", source);
     
     std::string output = testing::internal::GetCapturedStdout();
     if (!success) {

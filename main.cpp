@@ -15,7 +15,7 @@ static void Repl(Luggage::VM& vm) {
 
         if (line.empty()) break;
 
-        bool success = vm.Interpret(line);
+        bool success = vm.Interpret("script", line);
         if (!success) {
             const Luggage::LugError& error = vm.LastError();
             std::cerr << error.message << '\n';
@@ -27,12 +27,12 @@ static void Repl(Luggage::VM& vm) {
 static std::string ReadFile(std::string_view path) {
     std::ifstream file(path.data());
     if (!file.is_open()) {
-        std::cerr << "Could not open file: " << path << std::endl;
+        std::cerr << "could not open file: " << path << std::endl;
         exit(74);
     }
 
     // Read the entire file buffer into a string stream
-    std::stringstream buffer;
+    std::ostringstream buffer;
     buffer << file.rdbuf();
 
     return buffer.str();
@@ -40,7 +40,7 @@ static std::string ReadFile(std::string_view path) {
 
 static void RunFile(Luggage::VM& vm, std::string_view path) {
     std::string source = ReadFile(path);
-    bool success = vm.Interpret(source);
+    bool success = vm.Interpret(path, source);
 
     if (success) return;
     
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]){
     } else if (argc == 2) {
         RunFile(vm, argv[1]);
     } else {
-        std::cerr << "Usage: luggage [path]\n";
+        std::cerr << "usage: luggage [path]\n";
         exit(64);
     }
 

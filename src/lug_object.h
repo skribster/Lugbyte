@@ -15,6 +15,7 @@ enum class ObjType {
     OBJ,
     STRING,
     FUNCTION,
+    MODULE,
     UPVALUE,
     CLOSURE,
     NATIVE,
@@ -76,14 +77,16 @@ struct ObjFunction : Obj {
     ~ObjFunction() override;
     void Print() override;
 
+    static ObjFunction* New(VMCore& vm);
+
     Arguments parameters;
 
     std::size_t upvalueCount{ 0 };
     ObjString* name{ nullptr };
+    ObjString* sourcePath{ nullptr };
     Chunk chunk;
-
-    static ObjFunction* New(VMCore& vm);
 };
+
 
 // ObjUpvalue -----------------
 

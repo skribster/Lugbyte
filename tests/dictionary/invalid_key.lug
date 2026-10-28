@@ -4,4 +4,4 @@ box cipher <- {
     c <- 3
 }
 
-print(cipher["d"]) // expect: Could not find key in dictionary
+print(cipher["d"]) // expect: could not find key in dictionary

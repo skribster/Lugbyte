@@ -1,2 +1,3 @@
-Can't divide by zero.
-[line 1] in script
+runtime error: can't divide by zero
+stack traceback:
+    tests:1: in script

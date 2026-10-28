@@ -1,2 +1,3 @@
-Undefined variable 'unknown'.
-[line 1] in script
+runtime error: undefined variable 'unknown'
+stack traceback:
+    tests:1: in script

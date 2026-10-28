@@ -1,2 +1,2 @@
 box a <- "a"
-not a <- "value" // Error at '<-': Invalid assignment target.
+not a <- "value" // error at '<-': invalid assignment target

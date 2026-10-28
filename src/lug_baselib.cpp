@@ -1,9 +1,11 @@
 #include <ctime>
 
+
 #include "luggage.hpp"
 #include "lug_stdlib.h"
 #include "lug_auxlib.h"
 #include "lug_value.h"
+#include "lug_filesys.h"
 
 namespace Luggage::Lib {
 
@@ -16,7 +18,7 @@ static Value Write(VMCore& vm, Value* args, std::size_t argCount) {
 
         Value value = args[i];
         ObjString* stringed = vm.ToString(value);
-        ASSERT(stringed != nullptr, "Couldn't convert argument to string");
+        ASSERT(stringed != nullptr, "couldn't convert argument to string");
 
         std::printf("%s", stringed->characters);
     }
@@ -154,6 +156,29 @@ static Value Deepcopy(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
+static Value Unbox(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+    CheckType(vm, args[0], ObjType::STRING);
+
+    ObjString* filePath = args[0].AsObj<ObjString>();
+    auto resolved = Filesystem::ResolveModulePath(vm.stack.CurrentModulePath(), filePath->characters);
+    if (!resolved) {
+        vm.RuntimeError("could not find script '%s'", filePath->characters);
+    }
+    
+    auto source = Filesystem::ReadModule(*resolved);
+    if (!source) {
+        vm.RuntimeError("could not read script '%s'", filePath->characters);
+    }
+
+    ObjFunction* module = vm.LoadModule(*resolved);
+    ObjClosure* closure = ObjClosure::New(vm, module);
+    vm.Call(closure, 0);
+
+    return vm.stack.Peek(0);
+}
+
+
 // Library out ------------------------------
 
 static constexpr NativeEntry baseLib[] = {
@@ -165,6 +190,7 @@ static constexpr NativeEntry baseLib[] = {
     { "pcall",      &Pcall },
     { "deepcopy",   &Deepcopy },
     { "type",       &Type },
+    { "unbox",      &Unbox },
 };
 
 // Function declaration of defined in lug_stdlib.h

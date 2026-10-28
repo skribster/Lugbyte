@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <filesystem>
 
 #include "luggage.hpp"
 
@@ -131,7 +132,7 @@ class Compiler {
 public:
     explicit Compiler(VMCore& vm) : vm(vm) {}
 
-    ObjFunction* Compile(const char* source);
+    ObjFunction* Compile(const char* source, std::filesystem::path sourcePath);
     void MarkRoots();
 
 private:
@@ -142,6 +143,7 @@ private:
     bool isValidExprStmt{ false };
     Token pendingName{ Token::Synthetic("anonymous") };
     std::size_t lastGetExpr{ SIZE_MAX };
+    std::filesystem::path currentScriptPath;
 
     Chunk* CurrentChunk() const;
     void PushUnit(FunctionUnit* unit, FunctionType type);

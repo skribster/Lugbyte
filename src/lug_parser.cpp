@@ -5,7 +5,8 @@
 
 namespace Luggage {
 
-void Parser::Reset(const char* source) {
+void Parser::Reset(const char* source, std::filesystem::path path) {
+    modulePath = path;
     lexer.Reset(source);
     Advance();
 }
@@ -14,6 +15,10 @@ void Parser::Reset(const char* source) {
 void Parser::Advance() {
     previous = current;
     current = lexer.ScanToken();
+
+    if (current.type == TokenType::ERROR) {
+        ErrorAtCurrent(current.start);
+    }
 }
 
 
@@ -53,13 +58,16 @@ void Parser::Error(const char* message) {
 
 void Parser::ErrorAt(const Token& token, const char* message) {
     std::string errorMessage;
-    // [line <line>] Error
-    errorMessage += "[line ";
+    
+    errorMessage.append(modulePath.filename().string().c_str());
+    errorMessage += ":";
     errorMessage += std::to_string(token.line);
-    errorMessage += "] Error";
+    errorMessage += ": error";
 
     if (token.type == TokenType::END_OF_FILE) {
         errorMessage += " at end";
+    } else if (token.type == TokenType::ERROR) {
+        // Nothing.
     } else {
         errorMessage += " at '";
         errorMessage.append(token.start, token.length);

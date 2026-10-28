@@ -149,6 +149,7 @@ void GC::BlackenObject(Obj* obj) {
         case ObjType::FUNCTION: {
             ObjFunction* function = static_cast<ObjFunction*>(obj);
             MarkObject(function->name);
+            MarkObject(function->sourcePath);
             MarkVector(function->chunk.constants);
 
             break;
@@ -186,7 +187,7 @@ void GC::BlackenObject(Obj* obj) {
         }
 
         default: {
-            std::printf("Unknown object type %d\n", (int)obj->type);
+            std::printf("unknown object type %d\n", (int)obj->type);
             UNREACHABLE();
         }
     } 

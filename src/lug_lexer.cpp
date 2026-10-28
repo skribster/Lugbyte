@@ -110,21 +110,14 @@ Token Lexer::MakeToken(TokenType type) {
  * Produces an error token that holds an error
  * message.
  */
-void Lexer::LexError(const char* message) {
-    LugError error;
-    error.type = ErrorType::COMPILE;
-    
-    std::string errorMessage;
-    errorMessage += "[line ";
-    errorMessage += std::to_string(line);
-    errorMessage += "] Error at '";
-    errorMessage.append(start, static_cast<std::size_t>(current - start));
-    errorMessage += "': ";
-    errorMessage += message;
+Token Lexer::ErrorToken(const char* message) {
+    Token token;
+    token.type = TokenType::ERROR;
+    token.length = std::strlen(message);
+    token.start = message;
+    token.line = line;
 
-    error.message = errorMessage;
-
-    throw error;
+    return token;
 }
 
 
@@ -171,11 +164,11 @@ Token Lexer::Number() {
 
 Token Lexer::String() {
     while (Peek() != '"' && !IsAtEnd()) {
-        if (Peek() == '\n') LexError("Unterminated string.");
+        if (Peek() == '\n') return ErrorToken("unterminated string");
         Advance();
     }
 
-    if (IsAtEnd()) LexError("Unterminated string.");
+    if (IsAtEnd()) return ErrorToken("unterminated string");
 
     // The closing quote.
     Advance();
@@ -272,7 +265,7 @@ bool Lexer::Match(char expected) {
 
 // Lexer public methods -----------------------------
 Token Lexer::ScanToken() {
-    ASSERT(start != nullptr && current != nullptr, "Lexer not initialized with source code.");
+    ASSERT(start != nullptr && current != nullptr, "lexer not initialized with source code");
 
     /*
         In a tree-walk interpreter, we could account
@@ -319,7 +312,7 @@ Token Lexer::ScanToken() {
 
         case '!':
             if (Match('=')) return MakeToken(TokenType::BANG_EQUAL);
-            break; // breaks to LexError
+            break; // breaks to ErrorToken
             
         case '<':
             if (Match('=')) {
@@ -343,7 +336,7 @@ Token Lexer::ScanToken() {
             return String();
     }
 
-    LexError("Unexpected character.");
+    return ErrorToken("unexpected character");
 }
 
 
