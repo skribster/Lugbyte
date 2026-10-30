@@ -57,7 +57,7 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
 
 
 int main(int argc, char* argv[]) {
-    Luggage::VM::Config config;
+    Luggage::VMConfig config;
     config.resolveModuleFn = [](fs::path importer, fs::path requested)
         -> std::optional<fs::path> {
         fs::path p = fs::path("bootstrap/") / requested;
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
     };
 
     Luggage::VM vm(config);
-    vm.LoadLibrary(Luggage::LibInclude::BASE);
+    vm.LoadLibrary(Luggage::LibInclude::ALL);
     
     if (argc == 1) {
         Repl(vm);

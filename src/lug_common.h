@@ -13,7 +13,7 @@
 
 
 #if defined(__clang__) || defined(__GNUC__) 
-    #define USE_COMPUTED_GOTO
+    #define LUG_USE_COMPUTED_GOTO
 #endif
 
 

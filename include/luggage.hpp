@@ -57,6 +57,39 @@ void DefaultWriter(std::string_view string);
 
 
 /**
+ * The configuration for a single Luggage VM.
+ */
+struct VMConfig {
+    using ResolveModuleFn = std::function<std::optional<std::filesystem::path>
+        (const std::filesystem::path& importerPath, const std::filesystem::path& requestedPath)>;
+
+    using LoadModuleFn = std::function<std::optional<std::string>(const std::filesystem::path& filePath)>;
+    using WriteFn = std::function<void(std::string_view s)>;
+    using ErrorFn = std::function<void(const LugError& error)>;
+
+    /**
+     * A function to resolve a module's relative path into an absolute path.
+     */
+    ResolveModuleFn resolveModuleFn { DefaultResolveModule };
+
+    /**
+     * A function to load a .lug module and return back its contents.
+     */
+    LoadModuleFn loadModuleFn { DefaultFileLoader };
+    
+    /**
+     * A function for when the program wants to write something to
+     * a console.
+     */
+    WriteFn writeFn { DefaultWriter };
+
+    /**
+     * A function that runs immediately after an error.
+     */
+    ErrorFn errorFn { [](const LugError& error) {} };
+};
+
+/**
  * A virtual machine for executing Luggage bytecode. 
  * It manages the execution state, including the stack, 
  * instruction pointer, and other resources needed to run
@@ -64,41 +97,10 @@ void DefaultWriter(std::string_view string);
  */
 class VM {
 public:
-    /**
-     * The configuration for a single Luggage VM.
-     */
-    struct Config {
-        using ResolveModuleFn = std::function<std::optional<std::filesystem::path>
-            (const std::filesystem::path& importerPath, const std::filesystem::path& requestedPath)>;
-
-        using LoadModuleFn = std::function<std::optional<std::string>(const std::filesystem::path& filePath)>;
-        using WriteFn = std::function<void(std::string_view s)>;
-        using ErrorFn = std::function<void(const LugError& error)>;
-
-        /**
-         * A function to resolve a module's relative path into an absolute path.
-         */
-        ResolveModuleFn resolveModuleFn { DefaultResolveModule };
-
-        /**
-         * A function to load a .lug module and return back its contents.
-         */
-        LoadModuleFn loadModuleFn { DefaultFileLoader };
-        
-        /**
-         * A function for when the program wants to write something to
-         * a console.
-         */
-        WriteFn writeFn { DefaultWriter };
-
-        /**
-         * A function that runs immediately after an error.
-         */
-        ErrorFn errorFn { [](const LugError& error) {} };
-    };
+    
 
 
-    explicit VM(const Config& config = {});
+    explicit VM(const VMConfig& config = {});
     ~VM();
 
     /**
@@ -128,7 +130,7 @@ public:
 
 private:
     std::unique_ptr<VMCore> core;
-    VM::Config config;
+    VMConfig config;
 };
 
 

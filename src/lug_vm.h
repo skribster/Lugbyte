@@ -84,7 +84,7 @@ struct Stack {
 
 class VMCore {
 public:
-    VMCore(VM::Config config);
+    VMCore(VMConfig config);
   
     InterpretResult Interpret(std::string_view source, std::filesystem::path sourcePath);
     void DefineNative(const char* name, NativeFn function);
@@ -120,7 +120,7 @@ public:
 
     ObjUpvalue* openUpvalues{ nullptr };
     ObjModule* replModule{ nullptr };
-    VM::Config config;
+    VMConfig config;
     
 private:
     void Concatenate();

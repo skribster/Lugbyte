@@ -1298,10 +1298,12 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
                 a copy to be passed inside the function. For this reason, we
                 use a StoredExpression(), which will 
             */
-            bool shared = StoredExpression();
+            bool shared = parser.Check(TokenType::SHARE);
             if (shared) {
                 arguments.MarkShared(arguments.arity);
             }
+
+            StoredExpression();
             
             if (arguments.arity == 255) {
                 parser.Error("can't have more than 255 arguments");
