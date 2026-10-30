@@ -17,7 +17,9 @@ enum class ValueType {
 };
 
 
+struct VMCore;
 struct Obj;
+struct ObjString;
 enum class ObjType;
 
 /**
@@ -75,6 +77,7 @@ public:
 
     const char* StringType() const;
     std::uint32_t GetHash() const;
+    ObjString* ToString(VMCore& vm) const;
 
     ValueType type;
     

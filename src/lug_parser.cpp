@@ -78,7 +78,7 @@ void Parser::ErrorAt(const Token& token, const char* message) {
     errorMessage += message;
 
     LugError error;
-    error.type = ErrorType::COMPILE;
+    error.type = InterpretResult::COMPILE_ERROR;
     error.message = errorMessage;
 
     throw error;

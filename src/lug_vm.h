@@ -42,7 +42,7 @@ struct Stack {
     }
 
     inline std::filesystem::path CurrentModulePath() {
-        ObjString* sourcePath = GetFrame()->closure->function->sourcePath;
+        ObjString* sourcePath = GetFrame()->closure->module->path;
         return std::filesystem::path(sourcePath->characters);
     }
 
@@ -84,41 +84,43 @@ struct Stack {
 
 class VMCore {
 public:
-    VMCore();
+    VMCore(VM::Config config);
   
-    bool Interpret(std::string_view source, std::filesystem::path sourcePath);
+    InterpretResult Interpret(std::string_view source, std::filesystem::path sourcePath);
     void DefineNative(const char* name, NativeFn function);
-    ObjFunction* LoadModule(std::filesystem::path modulePath);
+    ObjModule* LoadModule(std::filesystem::path importerPath, std::filesystem::path modulePath);
     
     // Garbage collector methods ----------
     void AddObject(Obj* obj);
     void CollectGarbage();
     void MarkRoots();
     
-    void CallValue(Value value, std::uint8_t argCount, std::uint8_t shared);
+    void PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared);
+    bool CallValue(Value value, std::uint8_t argCount, std::uint8_t shared);
     void Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared = 0);
     ObjUpvalue* CaptureUpvalue(Value* local);
     void CloseUpvalues(Value* last);
     
     ObjThing* GetProtoOf(Value value) const;
-    ObjString* ToString(Value value);
     Value Deepcopy(const Value& value);
     
     std::string StackTraceback();
+    void PushError(LugError error);
     template<typename... Args>
-    [[noreturn]] void RuntimeError(const char* format, Args... args);
+    LugError RuntimeError(const char* format, Args... args);
     
     // Member variables -------------------
     Compiler compiler;
     GC gc;
 
     Table strings;
-    Table globals;
+    Table builtins;
     Table modules;
-
     Stack stack;
 
     ObjUpvalue* openUpvalues{ nullptr };
+    ObjModule* replModule{ nullptr };
+    VM::Config config;
     
 private:
     void Concatenate();
@@ -132,7 +134,7 @@ private:
 
 
 template<typename... Args>
-void VMCore::RuntimeError(const char* message, Args... args) {
+LugError VMCore::RuntimeError(const char* message, Args... args) {
     // Compute required length for the std::string
     int length = std::snprintf(nullptr, 0, message, args...);
     ASSERT(length, "snprintf formatting error");
@@ -148,7 +150,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
     errorMessage += StackTraceback();
 
     LugError error;
-    error.type = ErrorType::RUNTIME;
+    error.type = InterpretResult::RUNTIME_ERROR;
     error.message = errorMessage;
 
     ObjString* messageValue = ObjString::FromSource(
@@ -158,7 +160,7 @@ void VMCore::RuntimeError(const char* message, Args... args) {
 
     stack.Push(messageValue);
 
-    throw error;
+    return error;
 }
 
 

@@ -17,11 +17,6 @@ namespace Luggage {
 // Forward declarations so C++ doesn't get mad at me
 class Compiler; 
 
-enum class FunctionType {
-    FUNCTION,
-    SCRIPT
-};
-
 
 struct Local {
 	bool initialized{ false };
@@ -132,7 +127,7 @@ class Compiler {
 public:
     explicit Compiler(VMCore& vm) : vm(vm) {}
 
-    ObjFunction* Compile(const char* source, std::filesystem::path sourcePath);
+    ObjModule* Compile(const char* source, std::filesystem::path sourcePath);
     void MarkRoots();
 
 private:
@@ -186,7 +181,6 @@ private:
     // Statement methods
 
     bool Statement();
-    void PrintStatement();
     void BoxStatement();
     void Block();
     void IfStatement();

@@ -233,7 +233,7 @@ void FunctionUnit::MarkInitialized() {
 
 // Compiler public methods -----------------------------
 
-ObjFunction* Compiler::Compile(const char* source, std::filesystem::path modulePath) {
+ObjModule* Compiler::Compile(const char* source, std::filesystem::path modulePath) {
     parser.Reset(source, modulePath);
     currentScriptPath = modulePath;
     FunctionUnit unit{ vm, *this, parser };
@@ -244,8 +244,13 @@ ObjFunction* Compiler::Compile(const char* source, std::filesystem::path moduleP
     }
 
     ObjFunction* function = PopUnit();
+    
+    // ObjModule::New may trigger a collection, protect function* from being collected
+    vm.stack.Push(function);
+    ObjModule* module = ObjModule::New(vm, function, modulePath);
+    vm.stack.Pop(); // function
 
-    return function;
+    return module;
 }
 
 
@@ -267,7 +272,6 @@ Chunk* Compiler::CurrentChunk() const {
 
 void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->function = ObjFunction::New(vm);
-    unit->type = type;
 
     // Register the unit into the function linked list 
     // BEFORE we allocate the function name, otherwise if
@@ -277,11 +281,8 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
     unit->enclosing = currentUnit;
     currentUnit = unit;
     
-    if (type == FunctionType::SCRIPT) {
-        unit->function->sourcePath = ObjString::FromLiteral(vm, currentScriptPath.string().c_str());
-    } else {
+    if (type != FunctionType::SCRIPT) {
         unit->function->name = ObjString::FromSource(vm, pendingName.start, pendingName.length);
-        unit->function->sourcePath = ObjString::FromLiteral(vm, unit->enclosing->function->sourcePath->characters);
     }
 
     /*
@@ -305,7 +306,7 @@ ObjFunction* Compiler::PopUnit() {
         *CurrentChunk(), 
         function->name != nullptr 
         ? function->name->characters 
-        : function->sourcePath->characters
+        : "script"
     );
 #endif
 
@@ -781,12 +782,6 @@ bool Compiler::Statement() {
     do {} while (parser.Match(TokenType::SEMICOLON));
 
     return lastStatement;
-}
-
-
-void Compiler::PrintStatement() {
-    Expression();
-    EmitByte(OpCode::PRINT);
 }
 
 

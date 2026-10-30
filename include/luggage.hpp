@@ -4,13 +4,17 @@
 #include <string>
 #include <memory>
 #include <filesystem>
+#include <functional>
+#include <optional>
 
 namespace Luggage {
 
-enum class ErrorType {
-    COMPILE,
-    RUNTIME,
-    MEMORY
+enum class InterpretResult {
+    OK,
+    COMPILE_ERROR,
+    RUNTIME_ERROR,
+    MEMORY_ERROR,
+    FILE_ERROR,
 };
 
 
@@ -26,7 +30,7 @@ enum class LibInclude : unsigned {
 
 
 struct LugError {
-    ErrorType type;
+    InterpretResult type;
     std::string message;
 };  
 
@@ -40,6 +44,18 @@ class VMCore;
 
 
 
+// VM -------------------------------------------
+
+
+std::optional<std::filesystem::path> DefaultResolveModule(
+    const std::filesystem::path& importerPath, 
+    const std::filesystem::path& requestedPath
+);
+
+std::optional<std::string> DefaultFileLoader(const std::filesystem::path& filePath);
+void DefaultWriter(std::string_view string);
+
+
 /**
  * A virtual machine for executing Luggage bytecode. 
  * It manages the execution state, including the stack, 
@@ -48,7 +64,41 @@ class VMCore;
  */
 class VM {
 public:
-    VM();
+    /**
+     * The configuration for a single Luggage VM.
+     */
+    struct Config {
+        using ResolveModuleFn = std::function<std::optional<std::filesystem::path>
+            (const std::filesystem::path& importerPath, const std::filesystem::path& requestedPath)>;
+
+        using LoadModuleFn = std::function<std::optional<std::string>(const std::filesystem::path& filePath)>;
+        using WriteFn = std::function<void(std::string_view s)>;
+        using ErrorFn = std::function<void(const LugError& error)>;
+
+        /**
+         * A function to resolve a module's relative path into an absolute path.
+         */
+        ResolveModuleFn resolveModuleFn { DefaultResolveModule };
+
+        /**
+         * A function to load a .lug module and return back its contents.
+         */
+        LoadModuleFn loadModuleFn { DefaultFileLoader };
+        
+        /**
+         * A function for when the program wants to write something to
+         * a console.
+         */
+        WriteFn writeFn { DefaultWriter };
+
+        /**
+         * A function that runs immediately after an error.
+         */
+        ErrorFn errorFn { [](const LugError& error) {} };
+    };
+
+
+    explicit VM(const Config& config = {});
     ~VM();
 
     /**
@@ -61,17 +111,27 @@ public:
      */
     void LoadLibrary(LibInclude libraries);
 
-    /*
-        Takes in a Luggage program and interprets it. Returns
-        'true' if success, and 'false' if not.
+    /**
+     * Collects the VM's garbage immediately.
+     */
+    void CollectGarbage();
 
-        You can get the last error with VM::LastError().
-    */
-    [[nodiscard]] bool Interpret(std::filesystem::path module, std::string_view source);
+    /** 
+     * Takes in a Luggage program and interprets it. Returns
+     * 'true' if success, and 'false' if not.
+     *
+     * You can get the last error with VM::LastError().
+     */
+    [[nodiscard]] InterpretResult InterpretFile(std::filesystem::path module);
+    [[nodiscard]] InterpretResult Interpret(std::string_view source, std::string_view scriptName = "script");
     const LugError& LastError() const;
 
 private:
     std::unique_ptr<VMCore> core;
+    VM::Config config;
 };
+
+
+// Config ---------------------------------------
 
 }

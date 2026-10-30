@@ -54,8 +54,7 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
 
 static Value __Call__(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
-
-    return vm.ToString(args[0]);
+    return args[0].ToString(vm);
 }
 
 

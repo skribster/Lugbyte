@@ -69,8 +69,6 @@
     OPCODE(GET_ATTRIBUTE)           \
     OPCODE(SET_ATTRIBUTE)           \
                                     \
-    OPCODE(PRINT)                   \
-                                    \
     OPCODE(RETURN)
 
 namespace Luggage {

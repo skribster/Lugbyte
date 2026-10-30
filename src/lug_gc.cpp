@@ -131,77 +131,16 @@ void GC::BlackenObject(Obj* obj) {
     std::printf("\n");
 #endif
 
-    switch (obj->type) {
-        // These contain no outgoing references to
-        // other objects.
-        case ObjType::NATIVE: 
-        case ObjType::STRING: {
-            break;
-        }
-
-        case ObjType::UPVALUE: {
-            ObjUpvalue* upvalue = static_cast<ObjUpvalue*>(obj);
-            MarkValue(upvalue->closed);
-            
-            break;
-        }
-
-        case ObjType::FUNCTION: {
-            ObjFunction* function = static_cast<ObjFunction*>(obj);
-            MarkObject(function->name);
-            MarkObject(function->sourcePath);
-            MarkVector(function->chunk.constants);
-
-            break;
-        }
-
-        case ObjType::CLOSURE: {
-            ObjClosure* closure = static_cast<ObjClosure*>(obj);
-            MarkObject(closure->function);
-            for (std::size_t i = 0; i < closure->upvalueCount; i++) {
-                MarkObject(closure->upvalues[i]);
-            }
-
-            break;
-        }
-
-        case ObjType::LIST: {
-            ObjList* list = static_cast<ObjList*>(obj);
-            MarkVector(list->items);
-            
-            break;
-        }
-
-        case ObjType::DICT: {
-            ObjDict* dict = static_cast<ObjDict*>(obj);
-            MarkTable(dict->entries);
-
-            break;
-        }
-
-        case ObjType::THING: {
-            ObjThing* thing = static_cast<ObjThing*>(obj);
-            MarkTable(thing->attributes);
-
-            break;
-        }
-
-        default: {
-            std::printf("unknown object type %d\n", (int)obj->type);
-            UNREACHABLE();
-        }
-    } 
+    obj->Blacken(*this);
 }
 
 // Free methods -----------------------------------
 
 void GC::FreeObject(Obj* obj) {
 #ifdef LUG_DEBUG_LOG_GC
-    std::printf(
-        "%p free type %s\n", 
-        static_cast<void*>(obj), 
-        Obj::StringType(obj->type)
-    );
+    std::printf("%p free ", static_cast<void*>(obj));
+    Value::Print(obj);
+    std::printf("\n");
 #endif
 
     // Store the size before we call the destructor

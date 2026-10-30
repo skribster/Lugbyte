@@ -13,14 +13,15 @@ namespace Luggage::Lib {
 // Library implementation functions -----------------------------
 
 static Value Write(VMCore& vm, Value* args, std::size_t argCount) {
+    auto writer = vm.config.writeFn;
+    
     for (std::size_t i = 0; i < argCount; i++) {
-        if (i > 0) std::printf(" ");
+        if (i > 0) writer(" ");
+        
+        Value value = args[i];;
+        ObjString* stringed = value.ToString(vm);
 
-        Value value = args[i];
-        ObjString* stringed = vm.ToString(value);
-        ASSERT(stringed != nullptr, "couldn't convert argument to string");
-
-        std::printf("%s", stringed->characters);
+        writer(stringed->characters);
     }
 
     return Value::Nil();
@@ -29,7 +30,7 @@ static Value Write(VMCore& vm, Value* args, std::size_t argCount) {
 
 static Value Print(VMCore& vm, Value* args, std::size_t argCount) {
     Write(vm, args, argCount);
-    std::printf("\n");
+    vm.config.writeFn("\n");
 
     return Value::Nil();
 }
@@ -57,7 +58,7 @@ static Value Error(VMCore& vm, Value* args, std::size_t argCount) {
     CheckType(vm, args[0], ObjType::STRING);
 
     ObjString* errorMessage = args[0].AsObj<ObjString>();
-    vm.RuntimeError(errorMessage->characters);
+    throw vm.RuntimeError(errorMessage->characters);
     
     return 0;
 }
@@ -70,7 +71,7 @@ static Value Assert(VMCore& vm, Value* args, std::size_t argCount) {
 
     if (!args[0].AsBool()) {
         ObjString* errorMessage = args[1].AsObj<ObjString>();
-        vm.RuntimeError(errorMessage->characters);
+        throw vm.RuntimeError(errorMessage->characters);
     }
     
     return 0;
@@ -96,14 +97,15 @@ static Value Pcall(VMCore& vm, Value* args, std::size_t argCount) {
     try {
         vm.stack.Push(function);
         vm.Call(function, 0);
+        Value returned = vm.stack.Pop();
         result->Set("success", true);
-        result->Set("result", Value::Nil());
+        result->Set("result", returned);
 
     } catch (LugError& error) {
         const char* errorMessage = error.message.c_str();
         
         result->Set("success", false);
-        result->Set("result", vm.stack.Peek(0));
+        result->Set("result", ObjString::FromLiteral(vm, errorMessage));
 
         /*
             When the pcall ends, we want to make sure that any upvalues
@@ -163,16 +165,16 @@ static Value Unbox(VMCore& vm, Value* args, std::size_t argCount) {
     ObjString* filePath = args[0].AsObj<ObjString>();
     auto resolved = Filesystem::ResolveModulePath(vm.stack.CurrentModulePath(), filePath->characters);
     if (!resolved) {
-        vm.RuntimeError("could not find script '%s'", filePath->characters);
+        throw vm.RuntimeError("could not find script '%s'", filePath->characters);
     }
     
     auto source = Filesystem::ReadModule(*resolved);
     if (!source) {
-        vm.RuntimeError("could not read script '%s'", filePath->characters);
+        throw vm.RuntimeError("could not read script '%s'", filePath->characters);
     }
 
-    ObjFunction* module = vm.LoadModule(*resolved);
-    ObjClosure* closure = ObjClosure::New(vm, module);
+    ObjModule* module = vm.LoadModule(vm.stack.CurrentModulePath(), *resolved);
+    ObjClosure* closure = ObjClosure::New(vm, module->function, module);
     vm.Call(closure, 0);
 
     return vm.stack.Peek(0);

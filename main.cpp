@@ -6,8 +6,11 @@
 
 #include "luggage.hpp"
 
+namespace fs = std::filesystem;
 
 static void Repl(Luggage::VM& vm) {
+    std::cout << "Luggage Interactive REPL\n";
+
     std::string line;
     while (true) {
         std::cout << "> ";
@@ -15,8 +18,8 @@ static void Repl(Luggage::VM& vm) {
 
         if (line.empty()) break;
 
-        bool success = vm.Interpret("script", line);
-        if (!success) {
+        Luggage::InterpretResult result = vm.Interpret(line);
+        if (result != Luggage::InterpretResult::OK) {
             const Luggage::LugError& error = vm.LastError();
             std::cerr << error.message << '\n';
         }
@@ -40,22 +43,32 @@ static std::string ReadFile(std::string_view path) {
 
 static void RunFile(Luggage::VM& vm, std::string_view path) {
     std::string source = ReadFile(path);
-    bool success = vm.Interpret(path, source);
+    Luggage::InterpretResult result = vm.InterpretFile(path);
 
-    if (success) return;
+    if (result == Luggage::InterpretResult::OK) return;
     
     const Luggage::LugError& error = vm.LastError();
-    std::cerr << error.message << '\n';
+    std::cerr << error.message << std::endl;
 
-    if (error.type == Luggage::ErrorType::COMPILE) exit(65);
-    if (error.type == Luggage::ErrorType::RUNTIME) exit(70);
-    if (error.type == Luggage::ErrorType::MEMORY) exit(1); 
+    if (result == Luggage::InterpretResult::COMPILE_ERROR) exit(65);
+    if (result == Luggage::InterpretResult::RUNTIME_ERROR) exit(70);
+    if (result == Luggage::InterpretResult::MEMORY_ERROR) exit(1); 
 }
 
 
-int main(int argc, char* argv[]){
-    Luggage::VM vm;
-    vm.LoadLibrary(Luggage::LibInclude::ALL);
+int main(int argc, char* argv[]) {
+    Luggage::VM::Config config;
+    config.resolveModuleFn = [](fs::path importer, fs::path requested)
+        -> std::optional<fs::path> {
+        fs::path p = fs::path("bootstrap/") / requested;
+        p.replace_extension(".lug");
+        if (!fs::is_regular_file(p)) return std::nullopt;   // "module not found"
+        
+        return p;
+    };
+
+    Luggage::VM vm(config);
+    vm.LoadLibrary(Luggage::LibInclude::BASE);
     
     if (argc == 1) {
         Repl(vm);

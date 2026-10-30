@@ -357,10 +357,6 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
             return constantInstruction("OP_SET_ATTRIBUTE", chunk, offset);
         }
 
-        case OpCode::PRINT: {
-            return simpleInstruction("OP_PRINT", offset);
-        }
-
         case OpCode::RETURN: {
             return simpleInstruction("OP_RETURN", offset);
         }

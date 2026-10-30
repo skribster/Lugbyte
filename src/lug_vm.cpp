@@ -10,6 +10,8 @@
 #include "lug_stdlib.h"
 #include "lug_filesys.h"
 
+namespace fs = std::filesystem;
+
 namespace Luggage {
 
 // Helper functions -----------------------------------
@@ -113,29 +115,30 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
 
 // VMCore methods -----------------------------------
 
-VMCore::VMCore() 
+VMCore::VMCore(VM::Config config) 
     : strings(*this)
-    , globals(*this)
+    , builtins(*this)
     , gc(*this)
     , compiler(*this)
     , modules(*this)
+    , config(config)
 {
     // We'll initialize the memory LugError at the start of the program
     // so that we don't have to allocate it later on.
-    memoryError.type = ErrorType::MEMORY;
+    memoryError.type = InterpretResult::MEMORY_ERROR;
     memoryError.message = "unable to allocate further memory";
 
     stack.Reset();
 }
 
 
-bool VMCore::Interpret(std::string_view source, std::filesystem::path sourcePath) {
+InterpretResult VMCore::Interpret(std::string_view source, fs::path sourcePath) {
     try {
-        ObjFunction* function = compiler.Compile(source.data(), sourcePath);
-        stack.Push(function);
+        ObjModule* module = compiler.Compile(source.data(), sourcePath);
+        stack.Push(module);
 
-        ObjClosure* closure = ObjClosure::New(*this, function);
-        stack.Pop();
+        ObjClosure* closure = ObjClosure::New(*this, module->function, module);
+        stack.Pop(); // module
         stack.Push(closure);
         Call(closure, 0);
 
@@ -145,21 +148,21 @@ bool VMCore::Interpret(std::string_view source, std::filesystem::path sourcePath
         stack.Pop();
 
     } catch (LugError& error) {
-        lastError = error;
+        PushError(error);
         
         //! Not the best way right now to handle errors. Ideally the user'd like the stack to
         // rewind to how it was, but this is a good temporary fix.
         stack.Reset();
-        return false;
+        return error.type;
 
     } catch (std::bad_alloc& error) {
-        lastError = memoryError;
+        PushError(memoryError);
         stack.Reset();
 
-        return false;
+        return lastError.type;
     } 
 
-    return true;
+    return InterpretResult::OK;
 }
 
 
@@ -167,87 +170,12 @@ bool VMCore::Interpret(std::string_view source, std::filesystem::path sourcePath
  * Gets a value's proto, if there is any.
  */
 ObjThing* VMCore::GetProtoOf(Value value) const {
-    Value* proto = globals.Get(value.StringType());
+    Value* proto = builtins.Get(value.StringType());
     if (proto == nullptr || !proto->IsObj(ObjType::THING)) {
         return nullptr;
     }
 
     return proto->AsObj<ObjThing>();
-}
-
-
-/**
- * Returns back the stringified representation of a Luggage value.
- */
-ObjString* VMCore::ToString(Value value) {
-    if (value.IsObj()) {
-        switch (value.AsObj()->type) {
-            case ObjType::STRING: {
-                return value.AsObj<ObjString>();
-            }
-
-            case ObjType::CLOSURE: {
-                ObjClosure* closure = value.AsObj<ObjClosure>();
-                ObjFunction* function = closure->function;
-
-                if (function->name == nullptr) {
-                    return ObjString::FromLiteral(*this, "<script>");
-                }
-                        
-                return ObjString::FromFormat(*this, "<fn %s>", function->name->characters);
-            }
-
-            case ObjType::LIST: {
-                ObjList* list = value.AsObj<ObjList>();
-                return ObjString::FromFormat(*this, "<list %p>", static_cast<void*>(list));
-            }
-
-            case ObjType::DICT: {
-                ObjDict* dict = value.AsObj<ObjDict>();
-                return ObjString::FromFormat(*this, "<dict %p>", static_cast<void*>(dict));
-            }
-
-            case ObjType::THING: {
-                ObjThing* thing = value.AsObj<ObjThing>();
-                
-                const Value* stringDunder = thing->Get("__tostring__");
-                if (stringDunder != nullptr) {
-                    stack.Push(*stringDunder);
-                    stack.Push(thing);
-
-                    // We will 'share' the thing.
-                    CallValue(*stringDunder, 1, 0b1);
-                    Value result = stack.Pop();
-                    if (!result.IsObj(ObjType::STRING)) {
-                        RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
-                    }
-
-                    return result.AsObj<ObjString>();
-                }
-                
-                return ObjString::FromLiteral(*this, "<thing>");
-            }
-        }
-    }
-
-    switch (value.type) {
-        case ValueType::BOOLEAN: {
-            return ObjString::FromLiteral(*this, value.AsBool() ? "true" : "false");
-        }
-
-        case ValueType::NIL: {
-            return ObjString::FromLiteral(*this, "nil");
-        }
-
-        case ValueType::NUMBER: {
-            char buffer[20];
-            std::size_t length = std::snprintf(buffer, sizeof(buffer), "%.14g", value.AsNumber());
-            
-            return ObjString::FromSource(*this, buffer, length);
-        }
-    }
-
-    return nullptr;
 }
 
 
@@ -269,11 +197,12 @@ std::string VMCore::StackTraceback() {
     traceback += "stack traceback:\n";
     for (int i = stack.frameCount - 1; i >= 0; i--) {
         CallFrame& frame = stack.frames[i];
+        ObjModule* module = frame.closure->module;
         ObjFunction* function = frame.closure->function;
         std::size_t instruction = frame.ip - function->chunk.bytecode.Data() - 1;
         std::size_t line = function->chunk.GetLine(instruction);
 
-        std::filesystem::path path{ function->sourcePath->characters };
+        fs::path path{ module->path->characters };
         traceback += "    ";
         traceback += path.filename().string();
         traceback += ":";
@@ -282,13 +211,25 @@ std::string VMCore::StackTraceback() {
 
         if (function->name != nullptr) {
             traceback.append(function->name->characters);
-            traceback += "()\n";
+            traceback += "()";
         } else {
-            traceback += "script\n";
+            traceback += "script";
         }
+
+        if (i != 0) traceback += '\n';
     }
 
     return traceback;
+}
+
+
+/**
+ * 'Pushing' an error just means updating the lastError
+ * and also calling the user-defined error callback.
+ */
+void VMCore::PushError(LugError error) {
+    lastError = error;
+    config.errorFn(error);
 }
 
 
@@ -322,30 +263,37 @@ void VMCore::DefineNative(const char* name, NativeFn function) {
     stack.Push(ObjString::FromLiteral(*this, name));
     stack.Push(ObjNative::New(*this, name, function));
 
-    globals.Set(stack.Peek(1).AsObj<ObjString>(), stack.Peek(0));
+    builtins.Set(stack.Peek(1).AsObj<ObjString>(), stack.Peek(0));
 
     stack.Pop();
     stack.Pop();
 }
 
 
-ObjFunction* VMCore::LoadModule(std::filesystem::path modulePath) {
-    auto source = Filesystem::ReadModule(modulePath);
-    if (!source) {
-        return nullptr;
+ObjModule* VMCore::LoadModule(fs::path importerPath, fs::path modulePath) {
+    auto name = config.resolveModuleFn(importerPath, modulePath);
+    if (!name) {
+        throw RuntimeError("could not find file '%s'\n", modulePath.string().c_str());
     }
 
     // If it's already cached in the vm...
-    ObjString* moduleName = ObjString::FromLiteral(*this, (*source).data());
+    ObjString* moduleName = ObjString::FromLiteral(*this, modulePath.string().c_str());
     Value* cached = modules.Get(moduleName);
-    if (cached && cached->IsObj(ObjType::FUNCTION)) {
-        return cached->AsObj<ObjFunction>();
+    if (cached && cached->IsObj(ObjType::MODULE)) {
+        return cached->AsObj<ObjModule>();
     }
 
-    ObjFunction* compiledModule = compiler.Compile((*source).data(), modulePath);
-    modules.Set(moduleName, compiledModule);
+    auto source = config.loadModuleFn(*name);
+    if (!source) {
+        throw RuntimeError("could not load file '%s'\n", modulePath.string().c_str());
+    }
 
-    return compiledModule;
+    ObjModule* module = compiler.Compile((*source).data(), modulePath);
+    stack.Push(module);
+    modules.Set(moduleName, module);
+    stack.Pop();
+
+    return module;
 }
 
 
@@ -383,7 +331,7 @@ void VMCore::MarkRoots() {
         going through a reference. It is also able to access
         the cached modules. Let's mark those as well.
     */
-    gc.MarkTable(globals);
+    gc.MarkTable(builtins);
     gc.MarkTable(modules);
 
     /*
@@ -420,15 +368,37 @@ void VMCore::MarkRoots() {
 }
 
 
+void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
+    const ObjFunction::Arguments& parameters = closure->function->parameters;
+    if (argCount != parameters.arity) {
+        throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
+    }
+
+    // If the 'shared' parameters don't align...
+    std::uint8_t masked = parameters.shared & ~shared;
+    if ((masked) != 0) {
+        int index = CountTrailingZeroes(masked);
+        throw RuntimeError("expected a shared argument at argument %d", index + 1);
+    }
+
+    if (stack.frameCount == Stack::FRAMES_MAX) {
+        throw RuntimeError("stack overflow");
+    }
+
+    stack.AddFrame(closure, stack.top - argCount - 1);
+}
+
+
 /**
  * This function will attempt to call any value of any type.
+ * Returns whether a new stack frame was pushed.
  */
-void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) {
+bool VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) {
     if (value.IsObj()) {
         switch (value.AsObj()->type) {
             case ObjType::CLOSURE: {
-                Call(value.AsObj<ObjClosure>(), argCount, shared);
-                return;
+                PushFrame(value.AsObj<ObjClosure>(), argCount, shared);
+                return true;
             }
             
             case ObjType::NATIVE: {               
@@ -440,7 +410,7 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
                 
                 // Push the result of the function.
                 stack.Push(result);
-                return;
+                return false;
             }
             
             case ObjType::THING: {
@@ -450,21 +420,17 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
                 const Value* callDunder = thing->Get("__call__");
                 if (callDunder == nullptr) break;
                 
-                CallValue(*callDunder, argCount, shared);
-                return;
+                return CallValue(*callDunder, argCount, shared);;
             }
 
             default: {
                 ObjThing* valueProto = GetProtoOf(value);
-                if (valueProto != nullptr) {
-                    CallValue(valueProto, argCount, shared);
-                    return;
-                }
+                if (valueProto != nullptr) return CallValue(valueProto, argCount, shared);
             }
         }
     }
     
-    RuntimeError("attempted to call a '%s' value", value.StringType());
+    throw RuntimeError("attempted to call a '%s' value", value.StringType());
 }
 
 
@@ -473,23 +439,7 @@ void VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
  * until the function finishes.
  */
 void VMCore::Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
-    ObjFunction::Arguments parameters = closure->function->parameters;
-    if (argCount != parameters.arity) {
-        RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
-    }
-
-    // If the 'shared' parameters don't align...
-    std::uint8_t masked = parameters.shared & ~shared;
-    if ((masked) != 0) {
-        int index = CountTrailingZeroes(masked);
-        RuntimeError("expected a shared argument at argument %d", index + 1);
-    }
-
-    if (stack.frameCount == Stack::FRAMES_MAX) {
-        RuntimeError("stack overflow");
-    }
-
-    stack.AddFrame(closure, stack.top - argCount - 1);
+    PushFrame(closure, argCount, shared);
     Run();
 }
 
@@ -534,7 +484,9 @@ void VMCore::CloseUpvalues(Value* last) {
  * each instruction from its chunk.
  */
 void VMCore::Run() {
+    std::size_t entryDepth = stack.frameCount - 1;
     CallFrame* frame = stack.GetFrame();
+    ObjModule* module = frame->closure->module;
 
     bool isShortOp = false;
 
@@ -551,7 +503,7 @@ void VMCore::Run() {
         Value b = stack.Pop();                              \
         Value a = stack.Pop();                              \
         if (!a.IsNumber() || !b.IsNumber()) {               \
-            RuntimeError("operands must be numbers");      \
+            throw RuntimeError("operands must be numbers"); \
         }                                                   \
         stack.Push(a.AsNumber() op b.AsNumber());           \
     } while (false)
@@ -586,7 +538,7 @@ void VMCore::Run() {
             case (OpCode::NEGATE): {
                 Value value = stack.Pop();
                 if (!value.IsNumber()) {
-                    RuntimeError("operand must be a number");
+                    throw RuntimeError("operand must be a number");
                 }
 
                 stack.Push(-value.AsNumber());
@@ -624,7 +576,7 @@ void VMCore::Run() {
                     stack.Push(a + b);
 
                 } else {
-                    RuntimeError("can't add operands of type '%s' and '%s' together", 
+                    throw RuntimeError("can't add operands of type '%s' and '%s' together", 
                         stack.Peek(1).StringType(), 
                         stack.Peek(0).StringType()
                     );
@@ -646,7 +598,7 @@ void VMCore::Run() {
 
             case (OpCode::DIVIDE): {
                 if (stack.Peek(0).IsNumber() && stack.Peek(0).AsNumber() == 0) {
-                    RuntimeError("can't divide by zero");
+                    throw RuntimeError("can't divide by zero");
                 }
 
                 BINARY_OP(/);
@@ -657,7 +609,7 @@ void VMCore::Run() {
                 Value bValue = stack.Pop();
                 Value aValue = stack.Pop();
                 if (!aValue.IsNumber() || !bValue.IsNumber()) {           
-                    RuntimeError("operands must be numbers");
+                    throw RuntimeError("operands must be numbers");
                 }    
 
                 double a = aValue.AsNumber();
@@ -767,13 +719,13 @@ void VMCore::Run() {
                 Value stop = stack.Peek(1);
                 Value step = stack.Peek(0);
 
-                if (!start.IsNumber()) RuntimeError("'count' initial value must be a number");
-                if (!stop.IsNumber()) RuntimeError("'count' limit value must be a number");
-                if (!step.IsNumber()) RuntimeError("'count' step value must be a number");
+                if (!start.IsNumber()) throw RuntimeError("'count' initial value must be a number");
+                if (!stop.IsNumber()) throw RuntimeError("'count' limit value must be a number");
+                if (!step.IsNumber()) throw RuntimeError("'count' step value must be a number");
                 
                 // Check if the loop would even run at all.
                 if (step.AsNumber() == 0) {
-                    RuntimeError("'count' step value cannot be zero");
+                    throw RuntimeError("'count' step value cannot be zero");
                 }
                 
                 // This handles cases like:
@@ -863,7 +815,7 @@ void VMCore::Run() {
 
                     std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
                     while (
-                        index <= dict->entries.capacity 
+                        index < dict->entries.capacity 
                         && dict->entries.entries[index].IsEmpty()
                     ) index++;
 
@@ -878,7 +830,7 @@ void VMCore::Run() {
                 } 
                 
                 else {
-                    RuntimeError("'foreach' must iterate over an iterable type, got '%s' instead", iterable.StringType());
+                    throw RuntimeError("'foreach' must iterate over an iterable type, got '%s' instead", iterable.StringType());
                 }
 
                 break;
@@ -923,7 +875,7 @@ void VMCore::Run() {
 
                     std::size_t index = static_cast<std::size_t>(probingIndex.AsInteger());
                     do index++; while (
-                        index <= dict->entries.capacity 
+                        index < dict->entries.capacity 
                         && dict->entries.entries[index].IsEmpty()
                     );
 
@@ -974,7 +926,7 @@ void VMCore::Run() {
                     is the value on top of the stack.
                 */
                 ObjString* string = READ_STRING();
-                globals.Set(string, stack.Peek(0));
+                module->globals.Set(string, stack.Peek(0));
                 stack.Pop();
 
                 break;
@@ -982,10 +934,13 @@ void VMCore::Run() {
 
             case (OpCode::GET_GLOBAL): {
                 ObjString* name = READ_STRING();
-                Value* value = globals.Get(name);
+                Value* value = module->globals.Get(name);
 
+                // If we can't find it in the module's globals, try getting it from
+                // the builtins.
+                if (value == nullptr) value = builtins.Get(name);
                 if (value == nullptr) {
-                    RuntimeError("undefined variable '%s'", name->characters);
+                    throw RuntimeError("undefined variable '%s'", name->characters);
                 }
 
                 stack.Push(*value);
@@ -997,11 +952,11 @@ void VMCore::Run() {
 
                 // We assign the name to the value at the top of the stack.
                 Value& value = stack.Peek(0);
-                bool isNewKey = globals.Set(name, value);
+                bool isNewKey = module->globals.Set(name, value);
                 
                 if (isNewKey) {
-                    globals.Delete(name);
-                    RuntimeError("undefined variable '%s'", name->characters);
+                    module->globals.Delete(name);
+                    throw RuntimeError("undefined variable '%s'", name->characters);
                 }
 
                 break;
@@ -1046,7 +1001,10 @@ void VMCore::Run() {
                 std::uint8_t argCount = READ_BYTE();
                 
                 // Attempt to call the callee, whether it is of any value type.
-                CallValue(stack.Peek(argCount), argCount, 0b0);
+                if (CallValue(stack.Peek(argCount), argCount, 0b0)) {
+                    frame = stack.GetFrame();
+                    module = frame->closure->module;
+                }
                 
                 break;
             }
@@ -1055,7 +1013,10 @@ void VMCore::Run() {
                 std::uint8_t argCount = READ_BYTE();
                 std::uint8_t shared = READ_BYTE();
 
-                CallValue(stack.Peek(argCount), argCount, shared);
+                if (CallValue(stack.Peek(argCount), argCount, shared)) {
+                    frame = stack.GetFrame();
+                    module = frame->closure->module;
+                };
                 
                 break;
             }
@@ -1065,20 +1026,26 @@ void VMCore::Run() {
                 Value object = stack.Pop();
                 ObjThing* thing = nullptr;
 
+                // If the object is of type 'thing', then 'thing' is
+                // the object.
                 if (object.IsObj(ObjType::THING)) {
                     thing = object.AsObj<ObjThing>();
 
+                // If it's not a 'thing', we'll see if the object has a
+                // proto.
                 } else if (GetProtoOf(object) != nullptr) {
                     thing = GetProtoOf(object);
+                }
 
-                } else {
-                    RuntimeError(
+                // If we still haven't gotten the 'thing' yet, we throw an error.
+                if (thing == nullptr) {
+                    throw RuntimeError(
                         "method '%s' does not exist in value of type '%s'", 
                         methodName->characters, 
                         object.StringType()
                     );
                 }
-
+                
                 const Value* value = thing->Get(methodName);
                 stack.Push(*value);
                 stack.Push(object);
@@ -1088,7 +1055,7 @@ void VMCore::Run() {
 
             case (OpCode::CLOSURE): {
                 ObjFunction* function = READ_CONSTANT().AsObj<ObjFunction>();
-                ObjClosure* closure = ObjClosure::New(*this, function);
+                ObjClosure* closure = ObjClosure::New(*this, function, module);
                 stack.Push(closure);
 
                 for (std::size_t i = 0; i < closure->upvalueCount; i++) {
@@ -1164,12 +1131,12 @@ void VMCore::Run() {
                 //                 ^^^^^ stackTop. You are here.
                 Value& collection = stack.Peek(1);
                 if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                    RuntimeError("value of type '%s' is not indexable", stack.Peek(2).StringType());
+                    throw RuntimeError("value of type '%s' is not indexable", collection.StringType());
                 }
                 
                 switch (collection.AsObj()->type) {
                     case ObjType::LIST: {
-                        if (!stack.Peek(0).IsInteger()) RuntimeError("list index must be an integer");
+                        if (!stack.Peek(0).IsInteger()) throw RuntimeError("list index must be an integer");
                         
                         ObjList* list = collection.AsObj<ObjList>();
                         int index = stack.Peek(0).AsInteger();
@@ -1191,7 +1158,7 @@ void VMCore::Run() {
                         const Value* value = dict->Get(key);
                         if (value == nullptr) {
                             
-                            RuntimeError("could not find key in dictionary");
+                            throw RuntimeError("could not find key in dictionary");
                         }
 
                         stack.Pop(); // Key
@@ -1212,7 +1179,7 @@ void VMCore::Run() {
                 //                                    ^^^^^^ stackTop. You are here.
                 Value& collection = stack.Peek(2);
                 if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                    RuntimeError("value of type '%s' is not indexable", stack.Peek(2).StringType());
+                    throw RuntimeError("value of type '%s' is not indexable", stack.Peek(2).StringType());
                 }
 
                 Value newValue = stack.Peek(0);
@@ -1220,7 +1187,7 @@ void VMCore::Run() {
                 switch (collection.AsObj()->type) {
                     case ObjType::LIST: {
                         // Lists must always have integers as indices.
-                        if (!stack.Peek(1).IsInteger()) RuntimeError("list index must be an integer");
+                        if (!stack.Peek(1).IsInteger()) throw RuntimeError("list index must be an integer");
                         
                         ObjList* list = collection.AsObj<ObjList>();
                         int index = stack.Peek(1).AsInteger();
@@ -1264,7 +1231,7 @@ void VMCore::Run() {
                     ObjCategory* category = stack.Peek(0).AsObj<ObjCategory>();
                     const Value* type = category->GetType(attributeName);
                     if (type == nullptr) {
-                        RuntimeError("type '%s' does not exist in category", attributeName->characters);
+                        throw RuntimeError("type '%s' does not exist in category", attributeName->characters);
                     }
 
                     stack.Pop(); // Category
@@ -1277,7 +1244,7 @@ void VMCore::Run() {
                     ObjThing* thing = stack.Peek(0).AsObj<ObjThing>();
                     const Value* value = thing->Get(attributeName);
                     if (value == nullptr) {
-                        RuntimeError("thing has no attribute named '%s'", attributeName->characters);
+                        throw RuntimeError("thing has no attribute named '%s'", attributeName->characters);
                     }
                     
                     stack.Pop(); // Thing
@@ -1290,7 +1257,7 @@ void VMCore::Run() {
                 if (proto && proto->Get(attributeName) != nullptr) {
                     const Value* value = proto->Get(attributeName);
                     if (value == nullptr) {
-                        RuntimeError("could not find '%s' in value", attributeName->characters);
+                        throw RuntimeError("could not find '%s' in value", attributeName->characters);
                     }
 
                     stack.Pop();
@@ -1299,7 +1266,7 @@ void VMCore::Run() {
                     break;
                 }
                 
-                RuntimeError(
+                throw RuntimeError(
                     "type '%s' does not support attributes", 
                     stack.Peek(0).StringType()
                 );
@@ -1344,18 +1311,11 @@ void VMCore::Run() {
                     break;
                 }
 
-                RuntimeError(
+                throw RuntimeError(
                     "attribute '%s' does not exist in value of type '%s'", 
                     attributeName->characters, 
                     stack.Peek(0).StringType()
                 );
-            }
-            
-            case (OpCode::PRINT): {
-                Value::Print(stack.Pop());
-                std::printf("\n");
-                
-                break;
             }
 
             case (OpCode::RETURN): {
@@ -1365,7 +1325,12 @@ void VMCore::Run() {
                 stack.RemoveFrame();
                 stack.Push(result);
 
-                return;
+                if (stack.frameCount == entryDepth) return;
+
+                frame = stack.GetFrame();
+                module = frame->closure->module;
+
+                break;
             }
         }
 
@@ -1386,8 +1351,9 @@ void VMCore::Run() {
 
 // Luggage public header methods -----------------------------------
 
-VM::VM() 
-: core(std::make_unique<VMCore>()) 
+VM::VM(const VM::Config& config) 
+: core(std::make_unique<VMCore>(config)) 
+, config(config)
 {
     
 }
@@ -1396,8 +1362,36 @@ VM::VM()
 VM::~VM() = default;
 
 
-bool VM::Interpret(std::filesystem::path module, std::string_view source) {
-    return core->Interpret(source, module);
+InterpretResult VM::InterpretFile(fs::path filePath) {
+    auto resolved = Filesystem::ResolveModulePath("", filePath);
+    if (!resolved) {
+        LugError fileError = core->RuntimeError("could not find script '%s'", filePath.string().c_str());
+        fileError.type = InterpretResult::FILE_ERROR;
+        core->PushError(fileError);
+
+        return InterpretResult::FILE_ERROR;
+    }
+
+    auto source = Filesystem::ReadModule(filePath);
+    if (!source) {
+        LugError fileError = core->RuntimeError("could not load file '%s'", filePath.string().c_str());
+        fileError.type = InterpretResult::FILE_ERROR;
+        core->PushError(fileError);
+
+        return InterpretResult::FILE_ERROR;
+    }
+
+    return core->Interpret(*source, filePath);
+}
+
+
+InterpretResult VM::Interpret(std::string_view source, std::string_view scriptName) {
+    return core->Interpret(source, scriptName);
+}
+
+
+void VM::CollectGarbage() { 
+    core->CollectGarbage(); 
 }
 
 
@@ -1425,6 +1419,25 @@ void VM::LoadLibrary(LibInclude libraries) {
     if (libraries & LibInclude::STRING)         Lib::OpenString(*core);
     if (libraries & LibInclude::COLLECTION)     Lib::OpenCollection(*core);
     if (libraries & LibInclude::NUMBER)         Lib::OpenNumber(*core);
+}
+
+// Config --------------------------
+
+std::optional<fs::path> DefaultResolveModule(
+    const fs::path& importerPath, 
+    const fs::path& requestedPath
+) {
+    return Filesystem::ResolveModulePath(importerPath, requestedPath);
+}
+
+
+std::optional<std::string> DefaultFileLoader(const fs::path& filePath) {
+    return Filesystem::ReadModule(filePath);
+}
+
+
+void DefaultWriter(std::string_view string) {
+    std::fwrite(string.data(), sizeof(char), string.size(), stdout);
 }
 
 }

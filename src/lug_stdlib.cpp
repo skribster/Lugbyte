@@ -10,7 +10,7 @@ ObjThing* NewLib(VMCore& vm, const char* libraryName) {
     ObjString* name = ObjString::FromLiteral(vm, libraryName);
     vm.stack.Push(name);
 
-    vm.globals.Set(name, library);
+    vm.builtins.Set(name, library);
 
     vm.stack.Pop();
     vm.stack.Pop();

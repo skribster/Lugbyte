@@ -31,7 +31,6 @@ public:
 
     Vector<std::uint8_t> bytecode;
     Vector<LineStart> lines;
-
     Vector<Value> constants;
 
 private:

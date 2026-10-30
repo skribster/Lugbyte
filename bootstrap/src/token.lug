@@ -1,0 +1,89 @@
+box Token <- thing
+
+Token.Type <- category
+    // Single-character tokens
+    LEFT_PAREN,
+    RIGHT_PAREN,
+    LEFT_BRACE,
+    RIGHT_BRACE,
+    LEFT_BRACKET,
+    RIGHT_BRACKET,
+    COMMA,
+    DOT,
+    ELLIPSIS,
+    MINUS,
+    PLUS,
+    QUESTION,
+    SEMICOLON,
+    COLON,
+    SLASH,
+    STAR,
+    PERCENT,
+
+	// One-or-two character tokens
+    EQUAL,
+    BANG_EQUAL,
+    GREATER,
+    GREATER_EQUAL,
+    LESS,
+    LESS_EQUAL,
+    LEFT_ARROW,
+
+	// Literals
+    IDENTIFIER,
+    STRING,
+    NUMBER,
+    ERROR,
+
+    // Keywords
+    AND,
+    AT,
+    BOX,
+    BREAK,
+    BY,
+    CATEGORY,
+    CONTINUE,
+    COUNT,
+    DO,
+    ELSE,
+    ELSEIF,
+    END,
+    FALSE,
+    FUNCTION,
+    FOREACH,
+    FROM,
+    IF,
+    IN,
+    INSPECT,
+    NIL,
+    NOT,
+    OF,
+    OR,
+    RETURN,
+    SHARE,
+    SHARED,
+    THEN,
+    THING,
+    TRUE,
+    WHEN,
+    WHILE,
+
+    EOF
+end
+
+Token.new <- function(type, lexeme, literal, line)
+    return thing of Token {
+        type    <- type,
+        lexeme  <- lexeme,
+        literal <- literal,
+        line    <- line
+    }
+end
+
+
+Token.__tostring__ <- function(shared self)
+    return "<Token " + type + " '" + lexeme + "' " + string(line) + ">" 
+end
+
+
+return Token

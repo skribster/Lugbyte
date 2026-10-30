@@ -1,0 +1,18 @@
+// Variables --------------------------
+box Token <- unbox("token")
+
+// Module -----------------------------
+box Lexer <- thing
+
+Lexer.new <- function(source)
+    return thing of Lexer {
+        source <- source
+    }
+end
+
+Lexer.scanTokens <- function(shared self)
+    return [Token.new(Token.Type.EOF, "", "", 1)]
+end
+
+
+return Lexer

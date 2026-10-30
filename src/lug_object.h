@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem> 
+
 #include "lug_common.h"
 #include "lug_value.h"
 #include "lug_chunk.h"
@@ -10,6 +12,7 @@ namespace Luggage {
 
 // Forward declaration so C++ doesn't get mad at me
 class VMCore;
+class GC;
 
 enum class ObjType {
     OBJ,
@@ -30,6 +33,8 @@ struct Obj {
     Obj(VMCore& vm, ObjType type) : vm(vm), type(type) {}
     virtual ~Obj() = default;
     virtual void Print();
+    virtual ObjString* ToString();
+    virtual void Blacken(GC& gc) = 0;
 
     static const char* StringType(ObjType type);
 
@@ -47,6 +52,8 @@ struct ObjString : Obj {
     explicit ObjString(VMCore& vm) : Obj(vm, ObjType::STRING) {}    
     ~ObjString() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override {} // Nothing to blacken
 
     // Factory methods to create a new ObjString on the heap
     static ObjString* FromSource(VMCore& vm, const char* original, std::size_t length);
@@ -60,6 +67,11 @@ struct ObjString : Obj {
 
 
 // ObjFunction -----------------
+
+enum class FunctionType {
+    FUNCTION,
+    SCRIPT
+};
 
 struct ObjFunction : Obj {
     struct Arguments {
@@ -76,24 +88,36 @@ struct ObjFunction : Obj {
     explicit ObjFunction(VMCore& vm) : Obj(vm, ObjType::FUNCTION), chunk(vm) {}
     ~ObjFunction() override;
     void Print() override;
-
+    void Blacken(GC& gc) override;
+    
     static ObjFunction* New(VMCore& vm);
 
     Arguments parameters;
-
     std::size_t upvalueCount{ 0 };
     ObjString* name{ nullptr };
-    ObjString* sourcePath{ nullptr };
     Chunk chunk;
 };
 
+// ObjModule -----------------
+
+struct ObjModule : Obj {
+    explicit ObjModule(VMCore& vm) : Obj(vm, ObjType::MODULE), globals(vm) {}
+    void Print() override;
+    void Blacken(GC& gc) override;
+
+    Table globals;
+    ObjFunction* function{ nullptr };
+    ObjString* path{ nullptr };
+
+    static ObjModule* New(VMCore& vm, ObjFunction* function, std::filesystem::path path); 
+};
 
 // ObjUpvalue -----------------
 
 struct ObjUpvalue : Obj {
     explicit ObjUpvalue(VMCore& vm) : Obj(vm, ObjType::UPVALUE) {}
-    ~ObjUpvalue() override;
     void Print() override;
+    void Blacken(GC& gc) override;
 
     // We use a pointer here since upvalues store a *reference*
     // to the actual variable,not a copy.
@@ -110,14 +134,17 @@ struct ObjClosure : Obj {
     explicit ObjClosure(VMCore& vm) : Obj(vm, ObjType::CLOSURE) {}
     ~ObjClosure() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override;
 
     ObjFunction* function{ nullptr };
+    ObjModule* module{ nullptr };
 
     // Upvalue array
     ObjUpvalue** upvalues{ nullptr };
     std::size_t upvalueCount{ 0 };
 
-    static ObjClosure* New(VMCore& vm, ObjFunction* function);
+    static ObjClosure* New(VMCore& vm, ObjFunction* function, ObjModule* module);
 };
 
 // ObjNative -----------------
@@ -126,8 +153,9 @@ using NativeFn = Value(*)(VMCore& vm, Value* args, std::size_t argCount);
 
 struct ObjNative : Obj {
     explicit ObjNative(VMCore& vm) : Obj(vm, ObjType::NATIVE) {}
-    ~ObjNative() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override {};
 
     NativeFn function{ nullptr };
     const char* name;
@@ -139,8 +167,9 @@ struct ObjNative : Obj {
 
 struct ObjList : Obj {
     explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST), items(vm) {}
-    ~ObjList() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override;
 
     // An ObjList is just a wrapper for a dynamic array.
     Vector<Value> items;
@@ -164,8 +193,9 @@ struct ObjDict : Obj {
         : Obj(vm, ObjType::DICT), entries(vm) 
     {}
 
-    ~ObjDict() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override;
 
     Table entries;
 
@@ -186,8 +216,9 @@ struct ObjThing : Obj {
         : Obj(vm, ObjType::THING), attributes(vm) 
     {}
 
-    ~ObjThing() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override;
 
     Table attributes;
     
@@ -211,8 +242,10 @@ struct ObjCategory : Obj {
         : Obj(vm, ObjType::CATEGORY), types(vm)
     {}
 
-    ~ObjCategory() override;
     void Print() override;
+    ObjString* ToString() override;
+    void Blacken(GC& gc) override;
+    
     void AddType(ObjString* typeName, Value& index);
     const Value* GetType(ObjString* typeName);
     

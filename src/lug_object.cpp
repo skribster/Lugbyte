@@ -4,6 +4,7 @@
 
 #include "lug_object.h"
 #include "lug_vm.h"
+#include "lug_gc.h"
 
 namespace Luggage {
 
@@ -73,6 +74,12 @@ void Obj::Print() {
 }
 
 
+ObjString* Obj::ToString() {
+    std::printf("object of type '%d' has no tostring function", static_cast<int>(type));
+    UNREACHABLE();
+}
+
+
 const char* Obj::StringType(ObjType type) {
     switch (type) {
         case ObjType::STRING:   return "string";
@@ -80,6 +87,9 @@ const char* Obj::StringType(ObjType type) {
         case ObjType::NATIVE:   
         case ObjType::CLOSURE:  
             return "function";
+
+        case ObjType::MODULE:
+            return "module";
 
         case ObjType::LIST:     return "list";
         case ObjType::DICT:     return "dict";
@@ -94,7 +104,6 @@ const char* Obj::StringType(ObjType type) {
         default: 
             std::printf("unknown object type '%d'\n", static_cast<int>(type));
             UNREACHABLE();
-        
     }
 }
 
@@ -234,6 +243,11 @@ void ObjString::Print() {
 }
 
 
+ObjString* ObjString::ToString() {
+    return this; 
+}
+
+
 // ObjFunction methods ------------------------------------
 
 ObjFunction* ObjFunction::New(VMCore& vm) {
@@ -255,21 +269,46 @@ void ObjFunction::Print() {
         std::printf("<fn %s>", name->characters);
         return;
     }
-    
-    if (sourcePath != nullptr) {
-        std::printf("<%s>", sourcePath->characters);
-        return;
-    }
 
     std::printf("<script>");
 }
 
-// ObjUpvalue methods ------------------------------------
 
-ObjUpvalue::~ObjUpvalue() {
-
+void ObjFunction::Blacken(GC& gc) {
+    gc.MarkObject(name);                            
+    gc.MarkVector(chunk.constants);
 }
 
+
+// ObjModule methods ------------------------------------
+
+ObjModule* ObjModule::New(VMCore& vm, ObjFunction* function, std::filesystem::path path) {
+    ObjModule* module = AllocateObject<ObjModule>(vm);
+    module->function = function;
+
+    // Since FromLiteral may trigger an allocation and module isn't rooted yet, we 
+    // temporarily root it by pushing it to the stack.
+    vm.stack.Push(module);
+    module->path = ObjString::FromLiteral(vm, path.string().c_str());
+    vm.stack.Pop();
+
+    return module;
+}
+
+
+void ObjModule::Print() {
+    std::printf("<module %s>", function->name ? function->name->characters : "script");
+}
+
+
+void ObjModule::Blacken(GC& gc) {
+    gc.MarkTable(globals);
+    gc.MarkObject(function);
+    gc.MarkObject(path);
+}
+
+
+// ObjUpvalue methods ------------------------------------
 
 ObjUpvalue* ObjUpvalue::New(VMCore& vm, Value* slot) {
     ObjUpvalue* upvalue = AllocateObject<ObjUpvalue>(vm);
@@ -283,6 +322,12 @@ ObjUpvalue* ObjUpvalue::New(VMCore& vm, Value* slot) {
 void ObjUpvalue::Print() {
     std::printf("upvalue");
 }
+
+
+void ObjUpvalue::Blacken(GC& gc) {
+    gc.MarkValue(closed);
+}
+
 
 // ObjClosure methods ------------------------------------
 
@@ -301,7 +346,7 @@ ObjClosure::~ObjClosure() {
 }
 
 
-ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
+ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function, ObjModule* module) {
     ObjUpvalue** upvalues = Memory::Allocate<ObjUpvalue*>(vm, function->upvalueCount);
     for (std::size_t i = 0; i < function->upvalueCount; i++) {
         upvalues[i] = nullptr;
@@ -309,6 +354,7 @@ ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
     
     ObjClosure* newClosure = AllocateObject<ObjClosure>(vm);
     newClosure->function = function;
+    newClosure->module = module;
     newClosure->upvalues = upvalues;
     newClosure->upvalueCount = function->upvalueCount;
     newClosure->hash = HashPointer(newClosure);
@@ -319,6 +365,25 @@ ObjClosure* ObjClosure::New(VMCore& vm, ObjFunction* function) {
 
 void ObjClosure::Print() {
     function->Print();
+}
+
+
+ObjString* ObjClosure::ToString() {
+    if (function->name == nullptr) {
+        return ObjString::FromLiteral(vm, "<script>");
+    }
+            
+    return ObjString::FromFormat(vm, "<fn %s>", function->name->characters);
+}
+
+
+void ObjClosure::Blacken(GC& gc) {
+    gc.MarkObject(function);
+    gc.MarkObject(module);
+
+    for (std::size_t i = 0; i < upvalueCount; i++) {
+        gc.MarkObject(upvalues[i]);
+    }
 }
 
 
@@ -333,22 +398,17 @@ ObjNative* ObjNative::New(VMCore& vm, const char* name, NativeFn function) {
 }
 
 
-ObjNative::~ObjNative() {
-    
-}
-
-
 void ObjNative::Print() {
     std::printf("<native %s>", name);
 }
 
-// ObjList methods ------------------------------------
 
-
-ObjList::~ObjList() {
-    
+ObjString* ObjNative::ToString() {
+    return ObjString::FromFormat(vm, "<native %s>", name);
 }
 
+
+// ObjList methods ------------------------------------
 
 ObjList* ObjList::New(VMCore& vm) {
     ObjList* list = AllocateObject<ObjList>(vm);
@@ -365,6 +425,16 @@ void ObjList::Print() {
     }
 
     std::printf(" ]");
+}
+
+
+ObjString* ObjList::ToString() {
+    return ObjString::FromFormat(vm, "<list %p>", static_cast<void*>(this));
+}
+
+
+void ObjList::Blacken(GC& gc) {
+    gc.MarkVector(items);
 }
 
 
@@ -400,7 +470,7 @@ int ObjList::ClampIndex(int index) const {
 
 void ObjList::Set(int index, Value value) {
     index = ClampIndex(index);
-    if (index == -1) vm.RuntimeError("index '%d' out of range", index);
+    if (index == -1) throw vm.RuntimeError("index '%d' out of range", index);
     items[index] = value;
 }
 
@@ -410,11 +480,6 @@ ObjDict* ObjDict::New(VMCore& vm) {
     ObjDict* newDict = AllocateObject<ObjDict>(vm);
     newDict->hash = HashPointer(newDict);
     return newDict;
-}
-
-
-ObjDict::~ObjDict() {
-
 }
 
 
@@ -441,6 +506,16 @@ void ObjDict::Print() {
 }
 
 
+ObjString* ObjDict::ToString() {
+    return ObjString::FromFormat(vm, "<dict %p>", static_cast<void*>(this));
+}
+
+
+void ObjDict::Blacken(GC& gc) {
+    gc.MarkTable(entries);
+}
+
+
 const Value* ObjDict::Get(const Value& key) const {
     return entries.Get(key);
 }
@@ -458,11 +533,6 @@ void ObjDict::Delete(Value key) {
 
 // ObjThing methods ------------------------------------
 
-ObjThing::~ObjThing() {
-
-}
-
-
 ObjThing* ObjThing::New(VMCore& vm) {
     ObjThing* newThing = AllocateObject<ObjThing>(vm);
     newThing->hash = HashPointer(newThing);
@@ -473,6 +543,34 @@ ObjThing* ObjThing::New(VMCore& vm) {
 void ObjThing::Print() {
     std::printf("<thing>");
 }
+
+
+ObjString* ObjThing::ToString() {
+    const Value* stringDunder = Get("__tostring__");
+
+    // If we find a __tostring__ dunder in our attributes,
+    // we should call it.
+    if (stringDunder != nullptr) {
+        vm.stack.Push(*stringDunder);
+        vm.stack.Push(this);
+
+        // We will 'share' the thing.
+        vm.CallValue(*stringDunder, 1, 0b1);
+        Value result = vm.stack.Pop();
+        if (!result.IsObj(ObjType::STRING)) {
+            throw vm.RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
+        }
+
+        return result.AsObj<ObjString>();
+    }
+
+    return ObjString::FromLiteral(vm, "<thing>");
+}
+
+
+void ObjThing::Blacken(GC& gc) {
+    gc.MarkTable(attributes);
+} 
 
 
 const Value* ObjThing::Get(ObjString* attribute) const {
@@ -488,7 +586,7 @@ const Value* ObjThing::Get(ObjString* attribute) const {
 
     ObjThing* proto = protoValue->AsObj<ObjThing>();
     return proto->Get(attribute);
-}   
+}
 
 
 const Value* ObjThing::Get(const char* attribute) const {
@@ -515,11 +613,6 @@ void ObjThing::Delete(Value attribute) {
 
 // ObjCategory methods ------------------------------------
 
-ObjCategory::~ObjCategory() {
-
-}
-
-
 ObjCategory* ObjCategory::New(VMCore& vm) {
     ObjCategory* newCategory = AllocateObject<ObjCategory>(vm);
     return newCategory;
@@ -531,19 +624,29 @@ void ObjCategory::Print() {
 }
 
 
+ObjString* ObjCategory::ToString() {
+    return ObjString::FromFormat(vm, "<category %p>", static_cast<void*>(this));
+}
+
+
+void ObjCategory::Blacken(GC& gc) {
+    gc.MarkTable(types);
+}
+
+
 void ObjCategory::AddType(ObjString* typeName, Value& index) {
     bool isNewType = true;
     if (index.IsNil()) {
         isNewType = types.Set(typeName, currentIndex);
     } else {
-        if (!index.IsInteger()) vm.RuntimeError("cannot assign a category type as '%s'", index.StringType());
+        if (!index.IsInteger()) throw vm.RuntimeError("cannot assign a category type as '%s'", index.StringType());
         
         isNewType = types.Set(typeName, index);
         currentIndex = index.AsInteger();
     }
 
     if (!isNewType) {
-        vm.RuntimeError("cannot re-define category type '%s'", typeName->characters);
+        throw vm.RuntimeError("cannot re-define category type '%s'", typeName->characters);
     }
     
     currentIndex++;

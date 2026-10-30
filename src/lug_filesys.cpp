@@ -7,8 +7,8 @@ namespace fs = std::filesystem;
 
 namespace Luggage::Filesystem {
 
-std::optional<fs::path> ResolveModulePath(const fs::path& currentModule, const fs::path& requestedModule) {
-    fs::path candidate = requestedModule;
+std::optional<fs::path> ResolveModulePath(const fs::path& importerPath, const fs::path& requestedPath) {
+    fs::path candidate = requestedPath;
 
     /*
         If the passed-in path is relative, we shall resolve it against the
@@ -24,10 +24,11 @@ std::optional<fs::path> ResolveModulePath(const fs::path& currentModule, const f
         we want to search inside the parent path of a.lug, which is directory/.
     */
     if (candidate.is_relative()) {
-        // Empty script path means REPL (or string eval): fall back to cwd
-        fs::path base = currentModule.empty()
-                            ? fs::current_path()
-                            : currentModule.parent_path();
+        // Empty script path means REPL (or string eval): fall back to current
+        // working directory
+        fs::path base = importerPath.empty()
+            ? fs::current_path()
+            : importerPath.parent_path();
         candidate = base / candidate;
     }
 

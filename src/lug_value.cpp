@@ -109,8 +109,8 @@ const char* Value::StringType(ValueType type) {
         case ValueType::NUMBER:     return "number";
 
         default: {
-            UNREACHABLE();
             return "unknown";
+            UNREACHABLE();
         }
     }
 }
@@ -132,5 +132,35 @@ std::uint32_t Value::GetHash() const {
         default: UNREACHABLE();
     }
 }
+
+
+ObjString* Value::ToString(VMCore& vm) const {
+    switch (type) {
+        case ValueType::BOOLEAN: {
+            return ObjString::FromLiteral(vm, AsBool() ? "true" : "false");
+        }
+
+        case ValueType::NIL: {
+            return ObjString::FromLiteral(vm, "nil");
+        }
+
+        case ValueType::NUMBER: {
+            char buffer[20];
+            std::size_t length = std::snprintf(buffer, sizeof(buffer), "%.14g", AsNumber());
+            
+            return ObjString::FromSource(vm, buffer, length);
+        }
+
+        case ValueType::OBJ: {
+            return AsObj()->ToString();
+        }
+
+        default: {
+            std::printf("unknown value type '%d'\n", static_cast<int>(type));
+            UNREACHABLE();
+        }
+    }
+}
+
 
 }
