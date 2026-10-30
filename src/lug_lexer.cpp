@@ -63,6 +63,7 @@ static Keyword keywords[] = {
 	{"shared",		6,	TokenType::SHARED},
 	{"then",		4,	TokenType::THEN},
 	{"thing",		5,	TokenType::THING},
+	{"to",		    2,	TokenType::TO},
 	{"true",		4,	TokenType::TRUE},
 	{"while",		5,	TokenType::WHILE},
 	{"when",		4,	TokenType::WHEN},

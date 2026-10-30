@@ -971,7 +971,7 @@ void Compiler::CountStatement() {
     EmitBytes(OpCode::SET_LOCAL, counter);
     
     // Condition --------------------------
-    parser.Consume(TokenType::ELLIPSIS, "expected '...' after start value");
+    parser.Consume(TokenType::TO, "expected 'to' after start value");
     Expression();
     currentUnit->AddHiddenLocal("$limit");
     
@@ -1118,7 +1118,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACKET
     { nullptr,                  nullptr,                Precedence::NONE },             // COMMA
     { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // DOT
-    { nullptr,                  nullptr,                Precedence::NONE },             // Ellipsis
+    { nullptr,                  nullptr,                Precedence::NONE },             // ELLIPSIS
     { &Compiler::Unary,         &Compiler::Binary,      Precedence::TERM },             // MINUS
     { nullptr,                  &Compiler::Binary,      Precedence::TERM },             // PLUS
     { nullptr,                  nullptr,                Precedence::NONE },             // QUESTION
@@ -1172,6 +1172,7 @@ const ParseRule Compiler::rules[] = {
     { nullptr,                  nullptr,                Precedence::NONE },             // SHARED
     { nullptr,                  nullptr,                Precedence::NONE },             // THEN
     { &Compiler::Thing,         nullptr,                Precedence::NONE },             // THING
+    { nullptr,                  nullptr,                Precedence::NONE },             // TO
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // TRUE
     { nullptr,                  nullptr,                Precedence::NONE },             // WHEN
     { nullptr,                  nullptr,                Precedence::NONE },             // WHILE

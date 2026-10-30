@@ -69,6 +69,7 @@ enum class TokenType {
     SHARED,
     THEN,
     THING,
+    TO,
     TRUE,
     WHEN,
     WHILE,
