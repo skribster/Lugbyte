@@ -10,39 +10,6 @@ namespace Luggage {
 
 // Helper functions ------------------------------------
 
-template<typename T>
-static T* AllocateObject(VMCore& vm) {
-    /*
-        Every heap allocation needs to go through Reallocate for the 
-        garbage collector. We cannot do 'new <Object>' to allocate
-        to the heap, since it won't count the number of bytes we 
-        allocated and add it to the vm's bytesAllocated stat, 
-        so we route it to this function.
-    */
-    void* allocatedMemory = Memory::Reallocate(vm, nullptr, 0, sizeof(T));
-    
-    // This syntax allows us to create the Obj at the given
-    // memory block. This also calls the constructor of
-    // the Obj, which standard malloc() / Reallocate() does 
-    // not do.
-    T* object = new (allocatedMemory) T(vm);
-
-    object->size = sizeof(T);
-    vm.AddObject(object);
-
-#ifdef LUG_DEBUG_LOG_GC
-    std::printf(
-        "%p allocate %zu for %s\n", 
-        static_cast<void*>(object), 
-        object->size, 
-        Obj::StringType(object->type)
-    );
-#endif
-
-    return object;
-}
-
-
 /**
  * Hashes a string with the FNV-1a algorithm.
  */
@@ -65,6 +32,39 @@ static std::uint32_t HashPointer(void* pointer) {
     return reinterpret_cast<std::uintptr_t>(pointer) & UINT32_MAX;
 }
 
+
+template<typename T>
+static T* AllocateObject(VMCore& vm) {
+    /*
+        Every heap allocation needs to go through Reallocate for the 
+        garbage collector. We cannot do 'new <Object>' to allocate
+        to the heap, since it won't count the number of bytes we 
+        allocated and add it to the vm's bytesAllocated stat, 
+        so we route it to this function.
+    */
+    void* allocatedMemory = Memory::Reallocate(vm, nullptr, 0, sizeof(T));
+    
+    // This syntax allows us to create the Obj at the given
+    // memory block. This also calls the constructor of
+    // the Obj, which standard malloc() / Reallocate() does 
+    // not do.
+    T* object = new (allocatedMemory) T(vm);
+    object->hash = HashPointer(object);
+    object->size = sizeof(T);
+    
+    vm.AddObject(object);
+
+#ifdef LUG_DEBUG_LOG_GC
+    std::printf(
+        "%p allocate %zu for %s\n", 
+        static_cast<void*>(object), 
+        object->size, 
+        Obj::StringType(object->type)
+    );
+#endif
+
+    return object;
+}
 
 // Obj methods ------------------------------------
 
@@ -107,6 +107,10 @@ const char* Obj::StringType(ObjType type) {
     }
 }
 
+
+Obj* Obj::Copy() {
+    return this;
+}
 
 // ObjString methods ------------------------------------
 
@@ -410,18 +414,32 @@ ObjString* ObjNative::ToString() {
 
 // ObjList methods ------------------------------------
 
+
 ObjList* ObjList::New(VMCore& vm) {
+    // We allocate this before ObjList*, because Memory::Allocate
+    // can possibly trigger a GC. If wew allocate it after AllocateObject,
+    // the ObjList* might get freed when we allocate the buffer.
+    void* items = Memory::Allocate<ItemBuffer>(vm, 1);
+
     ObjList* list = AllocateObject<ObjList>(vm);
     list->hash = HashPointer(list);
+    list->items = new (items) ItemBuffer(vm);
+ 
     return list;
+}
+
+
+ObjList::~ObjList() {
+    items->refCount--;
+    if (items->refCount == 0) Memory::Free<ItemBuffer>(vm, items);
 }
 
 
 void ObjList::Print() {
     std::printf("[ ");
-    for (std::size_t i = 0; i < items.Count(); i++) {
-        Value::Print(items[i]);
-        if (i != items.Count() - 1) std::printf(", ");
+    for (std::size_t i = 0; i < items->data.Count(); i++) {
+        Value::Print(items->data[i]);
+        if (i != items->data.Count() - 1) std::printf(", ");
     }
 
     std::printf(" ]");
@@ -434,25 +452,81 @@ ObjString* ObjList::ToString() {
 
 
 void ObjList::Blacken(GC& gc) {
-    gc.MarkVector(items);
+    gc.MarkVector(items->data);
+}
+
+
+Obj* ObjList::Copy() {
+    ObjList* copy = AllocateObject<ObjList>(vm);
+    copy->hash = HashPointer(copy);
+    copy->items = items;
+    items->refCount++;
+
+    return copy;
+}
+
+
+void ObjList::MakeUnique() {
+    ItemBuffer* oldItems = items;
+    oldItems->refCount--;
+
+    ItemBuffer* fresh = Memory::Allocate<ItemBuffer>(vm, 1);
+
+    /*
+        Immediately set 'items' to item buffer, so that in case that
+        when we're copying all the old items over and it triggers a 
+        collection, the vm can reach them
+    */
+    items = new (fresh) ItemBuffer(vm);
+    for (auto& oldItem : oldItems->data) {
+        Value copy = oldItem.Copy();
+        vm.stack.Push(copy);
+        items->data.PushBack(copy);
+        vm.stack.Pop();
+    }
 }
 
 
 void ObjList::Append(Value value) {
-    items.PushBack(value);
+    if (items->refCount > 1) MakeUnique();
+
+    items->data.PushBack(value);
 }
 
 
-const Value* ObjList::Get(int index) const {
+Value* ObjList::Get(int index) {
     index = ClampIndex(index);
     if (index == -1) return nullptr;
 
-    return &items[index];
+    /*
+        If the getter returns a child that is a list, we want
+        to make sure that the current list has a unique buffer. This is 
+        so we don't have weird shared behavior when it comes to
+        lists.
+        
+        box a <- [
+            [1, 2, 3],
+            [4, 5, 6]
+        ]
+
+        box b <- a
+        a[0][2] <- 5 // a will split off from b and create a new unique matrix
+
+        Without this, b and a will have the same contents.
+    */
+    if (items->refCount > 1 && items->data[index].IsObj(ObjType::LIST)) {
+        MakeUnique();
+    }
+
+    return &items->data[index];
 }
 
 
 int ObjList::ClampIndex(int index) const {
-    int numItems = static_cast<int>(items.Count());
+    int numItems = static_cast<int>(items->data.Count());
+
+    // We can't index on an empty array anyway.
+    if (numItems == 0) return -1;
 
     // This handles the wrap-around case for negative numbers.
     if (index < 0) {
@@ -468,11 +542,20 @@ int ObjList::ClampIndex(int index) const {
 }
 
 
+int ObjList::Count() const {
+    return items->data.Count();
+}
+
+
 void ObjList::Set(int index, Value value) {
     int clampedIndex = ClampIndex(index);
     if (clampedIndex == -1) throw vm.RuntimeError("index '%d' out of range", index);
-    items[clampedIndex] = value;
+    
+    if (items->refCount > 1) MakeUnique();
+
+    items->data[clampedIndex] = value;
 }
+
 
 // ObjDict methods ------------------------------------
 
@@ -513,6 +596,25 @@ ObjString* ObjDict::ToString() {
 
 void ObjDict::Blacken(GC& gc) {
     gc.MarkTable(entries);
+}
+
+
+Obj* ObjDict::Copy() {
+    ObjDict* copy = ObjDict::New(vm);
+    vm.stack.Push(copy);
+    for (auto& entry : entries) {
+        Value key = entry.key.Copy();
+        vm.stack.Push(key);
+        Value value = entry.value.Copy();
+        vm.stack.Push(value);
+
+        copy->Set(key, value);
+        vm.stack.Pop();
+        vm.stack.Pop();
+    }
+
+    vm.stack.Pop(); // copy
+    return copy;
 }
 
 
@@ -573,6 +675,20 @@ void ObjThing::Blacken(GC& gc) {
 } 
 
 
+Obj* ObjThing::Copy() {
+    ObjThing* copy = ObjThing::New(vm);
+
+    for (auto& attribute : attributes) {
+        Value name = attribute.key.Copy();
+        Value value = attribute.value.Copy();
+
+        copy->Set(name.AsObj<ObjString>(), value);
+    }
+    
+    return copy;
+}
+
+
 const Value* ObjThing::Get(ObjString* attribute) const {
     Value* value = attributes.Get(attribute);
     if (value != nullptr) {
@@ -615,6 +731,7 @@ void ObjThing::Delete(Value attribute) {
 
 ObjCategory* ObjCategory::New(VMCore& vm) {
     ObjCategory* newCategory = AllocateObject<ObjCategory>(vm);
+    newCategory->hash = HashPointer(newCategory);
     return newCategory;
 }
 

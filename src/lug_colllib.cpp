@@ -32,8 +32,8 @@ static Value Clone(VMCore& vm, Value* args, std::size_t argCount) {
         This creates a shallow copy.
     */
     ObjList* clone = ObjList::New(vm);
-    for (std::size_t i = 0; i < list->items.Count(); i++) {
-        clone->Append(list->items[i]);
+    for (std::size_t i = 0; i < list->Count(); i++) {
+        clone->Append((*list)[i]);
     }
 
     return clone;
@@ -63,7 +63,7 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
 
     ObjList* list = args[0].AsObj<ObjList>();
 
-    return static_cast<int>(list->items.Count());
+    return static_cast<int>(list->Count());
 }
 
 

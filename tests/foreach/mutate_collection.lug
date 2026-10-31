@@ -1,0 +1,8 @@
+box coll <- [1, 2, 3, 4, 5]
+print(coll:sum())
+
+foreach item at index in coll do
+    coll[index] <- item + 1
+end
+
+print(coll:sum())

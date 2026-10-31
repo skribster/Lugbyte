@@ -1025,6 +1025,10 @@ void Compiler::ForeachStatement() {
     if (parser.Match(TokenType::AT)) {
         ParseVariable("expected key name after 'at'");
         DefineVariable(0);
+    } else {
+        // Make sure to add it as a local so that it actually pops off
+        // the stack when the scope ends!!!!!!!!!!!!!!!!
+        currentUnit->AddHiddenLocal("$keyVariable");
     }
     
     parser.Consume(TokenType::IN, "expected 'in' after item name");

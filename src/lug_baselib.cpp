@@ -152,12 +152,6 @@ static Value Type(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
-static Value Deepcopy(VMCore& vm, Value* args, std::size_t argCount) {
-    CheckArgc(vm, argCount, 1);
-    return vm.Deepcopy(args[0]);
-}
-
-
 static Value Unbox(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
     CheckType(vm, args[0], ObjType::STRING);
@@ -190,7 +184,6 @@ static constexpr NativeEntry baseLib[] = {
     { "error",      &Error },
     { "assert",     &Assert },
     { "pcall",      &Pcall },
-    { "deepcopy",   &Deepcopy },
     { "type",       &Type },
     { "unbox",      &Unbox },
 };

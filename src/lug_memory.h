@@ -52,6 +52,13 @@ template<typename T>
     return (T*)Reallocate(vm, nullptr, 0, sizeof(T) * count);
 }
 
+
+template<typename T>
+void Free(VMCore& vm, T* pointer) {
+    pointer->~T();
+    Reallocate(vm, pointer, sizeof(T), 0);
+}
+
 /**
  * Calculates a new capacity based on a given
  * current capacity. The minimum capacity is

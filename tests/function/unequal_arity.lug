@@ -1,0 +1,5 @@
+box func <- function(a, b, c, d)
+    print(a, b, c, d)
+end
+
+func(1, 2, 3) // expect: expected 4 arguments, got 3

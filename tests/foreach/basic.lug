@@ -1,0 +1,6 @@
+box collection <- ["a", "b", "c", "d"]
+
+// expect: a b c d
+foreach value in collection do
+    print(value)
+end

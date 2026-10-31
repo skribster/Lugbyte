@@ -1,0 +1,14 @@
+
+// expect:  0 1
+//          1 2
+//          2 3
+box list <- [1, 2, 3]
+foreach value at index in list do
+    print(index, value)
+end
+
+// expect: a 1
+box dict <- {"a" <- 1}
+foreach value at key in dict do
+    print(key, value)
+end

@@ -163,4 +163,10 @@ ObjString* Value::ToString(VMCore& vm) const {
 }
 
 
+Value Value::Copy() {
+    if (IsObj()) return AsObj()->Copy();
+    return *this;
+}
+
+
 }

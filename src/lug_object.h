@@ -35,6 +35,7 @@ struct Obj {
     virtual void Print();
     virtual ObjString* ToString();
     virtual void Blacken(GC& gc) = 0;
+    virtual Obj* Copy();
 
     static const char* StringType(ObjType type);
 
@@ -165,22 +166,37 @@ struct ObjNative : Obj {
 
 // ObjList -----------------
 
+struct ItemBuffer {
+    ItemBuffer(VMCore& vm) : vm(vm), data(vm) {}
+
+    VMCore& vm;
+    std::size_t refCount{ 1 };
+    Vector<Value> data;
+};
+
+
 struct ObjList : Obj {
-    explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST), items(vm) {}
+    explicit ObjList(VMCore& vm) : Obj(vm, ObjType::LIST) {}
+    ~ObjList() override;
     void Print() override;
     ObjString* ToString() override;
     void Blacken(GC& gc) override;
+    Obj* Copy() override;
+    void MakeUnique();
 
     // An ObjList is just a wrapper for a dynamic array.
-    Vector<Value> items;
+    ItemBuffer* items{ nullptr };
 
     void Append(Value value);
-    const Value* Get(int index) const;
+    Value* Get(int index);
     void Set(int index, Value value);
     int ClampIndex(int index) const;
+    int Count() const;
 
-    Vector<Value>::Iterator begin() { return items.begin(); }
-    Vector<Value>::Iterator end() { return items.end(); }
+    Vector<Value>::Iterator begin() { return items->data.begin(); }
+    Vector<Value>::Iterator end() { return items->data.end(); }
+
+    const Value& operator[](int index) { return *Get(index); }
 
     static ObjList* New(VMCore& vm);
 };
@@ -196,6 +212,7 @@ struct ObjDict : Obj {
     void Print() override;
     ObjString* ToString() override;
     void Blacken(GC& gc) override;
+    Obj* Copy() override;
 
     Table entries;
 
@@ -219,6 +236,7 @@ struct ObjThing : Obj {
     void Print() override;
     ObjString* ToString() override;
     void Blacken(GC& gc) override;
+    Obj* Copy() override;
 
     Table attributes;
     

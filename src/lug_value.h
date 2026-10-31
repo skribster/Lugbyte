@@ -78,6 +78,7 @@ public:
     const char* StringType() const;
     std::uint32_t GetHash() const;
     ObjString* ToString(VMCore& vm) const;
+    Value Copy();
 
     ValueType type;
     

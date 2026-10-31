@@ -1,0 +1,18 @@
+box printMatrix <- function(matrix)
+    foreach row at rowIndex in matrix do
+        foreach item in row do
+            print(item)
+        end
+    end
+end
+
+
+box a <- [
+    [1, 2, 3],
+    [4, 5, 6]
+]
+
+box b <- a
+b[0][0] <- 100
+printMatrix(a)
+printMatrix(b)

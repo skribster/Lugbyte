@@ -44,82 +44,6 @@ static int CountTrailingZeroes(std::uint8_t byte) {
 }
 
 
-/**
- * The implementation for deepcopy. 
- */
-static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Obj*, Obj*>& memo) {
-    if (!value.IsObj()) return value;
-
-    Obj* obj = value.AsObj();
-
-    // Already copied (or currently being copied)? Reuse it.
-    if (auto it = memo.find(obj); it != memo.end()) {
-        return it->second;
-    }
-
-    switch (obj->type) {
-        case ObjType::FUNCTION:
-        case ObjType::CLOSURE:
-        case ObjType::NATIVE:
-            return value;
-
-        // Strings are immutable.
-        case ObjType::STRING: {
-            return value;
-        }
-
-        case ObjType::LIST: {
-            ObjList* original = value.AsObj<ObjList>();
-            ObjList* copy = ObjList::New(vm);
-
-            // Root the copy before we allocate anything.
-            vm.stack.Push(copy);
-            memo[obj] = copy;   // register BEFORE recursing
-
-            for (auto& item : *original) {
-                Value child = DeepcopyValue(vm, item, memo);
-                vm.stack.Push(child);
-                copy->Append(child);
-                vm.stack.Pop();
-            }
-            vm.stack.Pop(); // copy;
-            return copy;
-        }
-
-        case ObjType::DICT: {
-            ObjDict* original = value.AsObj<ObjDict>();
-            ObjDict* copy = ObjDict::New(vm);
-            memo[obj] = copy;
-
-            for (auto& entry : *original) {
-                Value k = DeepcopyValue(vm, entry.key, memo);
-                Value v = DeepcopyValue(vm, entry.value, memo);
-                copy->Set(k, v);   // was original->Set
-            }
-            return copy;
-        }
-
-        case ObjType::THING: {
-            ObjThing* original = value.AsObj<ObjThing>();
-            ObjThing* copy = ObjThing::New(vm);
-            memo[obj] = copy;
-
-            for (auto& attribute : original->attributes) {
-                Value name = DeepcopyValue(vm, attribute.key, memo);
-                Value v = DeepcopyValue(vm, attribute.value, memo);
-
-                copy->Set(name.AsObj<ObjString>(), v);
-            }
-            
-            return copy;
-        }
-
-        default:
-            return value;
-    }
-}
-
-
 // VMCore methods -----------------------------------
 
 VMCore::VMCore(VMConfig config) 
@@ -183,16 +107,6 @@ ObjThing* VMCore::GetProtoOf(Value value) const {
     }
 
     return proto->AsObj<ObjThing>();
-}
-
-
-/**
- * Returns a duplicate of a value that recursively copies
- * all underlying and nested elements.
- */
-Value VMCore::Deepcopy(const Value& value) {
-    std::unordered_map<Obj*, Obj*> memo;
-    return DeepcopyValue(*this, value, memo);
 }
 
 
@@ -847,7 +761,7 @@ void VMCore::Run() {
                 ASSERT(listValue != nullptr, "the foreach index is out of range");
                 value = *listValue;
                 
-                if (static_cast<std::size_t>(key.AsInteger()) >= list->items.Count()) {
+                if (static_cast<std::size_t>(key.AsInteger()) >= list->Count()) {
                     JUMP_FORWARD(jumpToEnd);
                 }
             } 
@@ -901,7 +815,7 @@ void VMCore::Run() {
                 // Check if we exceeded the index count. If so, that means
                 // we're done with iterating through the list. Exit out of
                 // the loop.
-                if (key.AsInteger() < list->items.Count()) {
+                if (key.AsInteger() < list->Count()) {
                     // In case we screwed something up by letting the index go out of
                     // range of the list, causing list->Get to return nullptr, we assert
                     const Value* listValue = list->Get(key.AsNumber());
@@ -955,9 +869,16 @@ void VMCore::Run() {
 
         CASE(COPY): {
             Value value = stack.Peek(0);
-            Value copy = Deepcopy(value);
-            stack.Pop();
-            stack.Push(copy);
+            if (value.IsObj()) {
+                Value copy = value.AsObj()->Copy();
+                stack.Pop();
+                stack.Push(copy);
+            } else {
+            #ifdef LUG_DEBUG_PRINT_CODE
+                std::printf("          (unchanged)\n");
+            #endif
+            }
+
 
             DISPATCH();
         }
@@ -1151,8 +1072,14 @@ void VMCore::Run() {
 
         CASE(APPEND): {
             ObjList* list = stack.Peek(1).AsObj<ObjList>();
-            list->Append(stack.Pop());
-            
+
+            // Keep the value on the stack until after we append
+            // to prevent the GC from collecting it in the case that
+            // 'append' triggers a collection
+            Value value = stack.Peek(0);
+            list->Append(value);
+            stack.Pop();
+
             DISPATCH();
         }
 
