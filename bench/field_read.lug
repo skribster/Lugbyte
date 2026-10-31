@@ -1,0 +1,30 @@
+box Point <- thing
+
+Point.new <- function(x, y)
+    box self <- thing of Point
+    self.x <- x
+    self.y <- y
+    return self
+end
+
+Point.lengthSq <- function(shared self)
+    return self.x * self.x + self.y * self.y
+end
+
+Point.move <- function(shared self, dx, dy)
+    self.x <- self.x + dx
+    self.y <- self.y + dy
+end
+
+box fieldRead <- function(n)
+    box p <- Point.new(3, 4)
+    box acc <- 0
+    count i from 1 to n do
+        acc <- acc + p.x
+    end
+    return acc
+end
+
+box start <- clock()
+print(fieldRead(1000000))
+print(clock() - start)

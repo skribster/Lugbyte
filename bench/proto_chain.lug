@@ -1,0 +1,18 @@
+box Level1 <- thing
+Level1.inherited <- 7
+box Level2 <- thing of Level1
+box Level3 <- thing of Level2
+box Level4 <- thing of Level3
+box deepObject <- thing of Level4
+
+box protoChain <- function(n)
+    box acc <- 0
+    count i from 1 to n do
+        acc <- acc + deepObject.inherited
+    end
+    return acc
+end
+
+box start <- clock()
+print(protoChain(500000))
+print(clock() - start)

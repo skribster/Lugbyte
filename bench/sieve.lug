@@ -1,0 +1,25 @@
+// Sieve of Eratosthenes
+box sieve <- function(n)
+    box flags <- []
+    count i from 0 to n do
+        flags:append(true)
+    end
+
+    box found <- 0
+    box j <- 0
+    count k from 2 to n do
+        if flags[k] then
+            found <- found + 1
+            j <- k * k
+            while j <= n do
+                flags[j] <- false
+                j <- j + k
+            end
+        end
+    end
+    return found
+end
+
+box start <- clock()
+print(sieve(200000))
+print(clock() - start)

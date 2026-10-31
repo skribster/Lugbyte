@@ -1,0 +1,12 @@
+box stringConcat <- function(n)
+    box s <- ""
+    count i from 1 to n do
+        s <- s + "+"
+    end
+    return s
+end
+
+
+box start <- clock()
+print(stringConcat(20000))
+print(clock() - start)

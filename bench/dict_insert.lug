@@ -1,0 +1,11 @@
+box dictInsert <- function(n)
+    box d <- {}
+    count i from 1 to n do
+        d["key" + string(i)] <- i
+    end
+    return d
+end
+
+box start <- clock()
+print(dictInsert(100000))
+print(clock() - start)

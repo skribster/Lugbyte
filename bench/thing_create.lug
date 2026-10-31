@@ -1,0 +1,29 @@
+box Point <- thing
+
+Point.new <- function(x, y)
+    box self <- thing of Point
+    self.x <- x
+    self.y <- y
+    return self
+end
+
+Point.lengthSq <- function(shared self)
+    return self.x * self.x + self.y * self.y
+end
+
+Point.move <- function(shared self, dx, dy)
+    self.x <- self.x + dx
+    self.y <- self.y + dy
+end
+
+box thingCreate <- function(n)
+    box p <- Point.new(0, 0)
+    count i from 1 to n do
+        p <- Point.new(i, i)
+    end
+    return p
+end
+
+box start <- clock()
+print(thingCreate(200000))
+print(clock() - start)

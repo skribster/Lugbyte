@@ -1,0 +1,11 @@
+box countLoop <- function(n)
+    box sum <- 0
+    count i from 1 to n do
+        sum <- sum + i * 2
+    end
+    return sum
+end
+
+box start <- clock()
+print(countLoop(1000000))
+print(clock() - start)

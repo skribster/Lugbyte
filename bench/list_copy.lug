@@ -1,0 +1,16 @@
+box listCopy <- function(n)
+    box list <- []
+    count i from 1 to n do
+        list:append(i)
+    end
+
+    box copy <- list
+    count k from 1 to 100 do
+        copy <- list
+    end
+    return copy
+end
+
+box start <- clock()
+print(listCopy(100000))
+print(clock() - start)

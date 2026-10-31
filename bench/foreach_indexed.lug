@@ -1,0 +1,16 @@
+box foreachIndexed <- function(n)
+    box list <- []
+    count i from 1 to n do
+        list:append(i)
+    end
+
+    box sum <- 0
+    foreach value at index in list do
+        sum <- sum + value + index
+    end
+    return sum
+end
+
+box start <- clock()
+print(foreachIndexed(200000))
+print(clock() - start)

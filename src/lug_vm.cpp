@@ -71,11 +71,18 @@ static Value DeepcopyValue(VMCore& vm, const Value& value, std::unordered_map<Ob
         case ObjType::LIST: {
             ObjList* original = value.AsObj<ObjList>();
             ObjList* copy = ObjList::New(vm);
+
+            // Root the copy before we allocate anything.
+            vm.stack.Push(copy);
             memo[obj] = copy;   // register BEFORE recursing
 
             for (auto& item : *original) {
-                copy->Append(DeepcopyValue(vm, item, memo));
+                Value child = DeepcopyValue(vm, item, memo);
+                vm.stack.Push(child);
+                copy->Append(child);
+                vm.stack.Pop();
             }
+            vm.stack.Pop(); // copy;
             return copy;
         }
 
@@ -1178,6 +1185,9 @@ void VMCore::Run() {
                     ObjList* list = collection.AsObj<ObjList>();
                     int index = stack.Peek(0).AsInteger();
                     const Value* value = list->Get(index);
+                    if (value == nullptr) {
+                        throw RuntimeError("index '%d' out of bounds", index);
+                    }
 
                     stack.Pop(); // Index
                     stack.Pop(); // Collection
@@ -1194,7 +1204,6 @@ void VMCore::Run() {
                     Value& key = stack.Peek(0);
                     const Value* value = dict->Get(key);
                     if (value == nullptr) {
-                        
                         throw RuntimeError("could not find key in dictionary");
                     }
 

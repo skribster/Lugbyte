@@ -102,6 +102,11 @@ TEST_P(LugScriptTest, TestSingleFile) {
         output += vm.LastError().message;
     }
 
+    if (expected == "[[ignoreoutput]]") {
+        std::cout << output;
+        return;
+    }
+
     EXPECT_TRUE(output == expected) 
         << path 
         << " failed."

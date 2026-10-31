@@ -1,0 +1,225 @@
+// Luggage Programming 
+// Language Showcase :)
+
+// --- Data types -----------------------------------
+// number, boolean, string, function, list, dict, thing, none
+
+// --- Variable declaration -------------------------
+
+box a <- 0
+box unassigned
+box c <- a = 0
+
+// runtime error: use of unassigned variable 'unassigned'
+print(unassigned)
+
+// --- Reassigning ----------------------------------
+
+// Luggage is dynamically typed.
+box b <- "Hello"
+b <- 2
+
+// error: undefined variable 'd'
+d <- 3
+
+// --- Function declaration -------------------------
+
+box add <- function(a, b) 
+    return a + b
+end
+
+box result <- add(1, 2)
+
+// --- Control flow -------------------------
+
+box money <- 10
+box cost <- 5
+
+if money < cost then
+    print("You don't have enough to buy this item.")
+elseif money >= cost then
+    print("Bought item!")
+    money <- money - cost
+end
+
+box incrementer <- 0
+while incrementer < 10 do
+    incrementer <- incrementer + 1
+    if incrementer = 5 then
+        continue
+    end
+
+    print(incrementer)
+end
+
+// For loops have an optional third part where you
+// specify how much you want to add or subtract to
+// the incrementer.
+count incrementer2 from 0 to 10 do
+    if incrementer2 = 5 then
+        continue
+    end
+    
+    print(incrementer2)
+end
+
+// The 'stop' value is inclusive.
+// Expect: 10 9 8 7 6 5 4 3 2 1 0
+count countdown from 10 to 0 by -1 do
+    print(countdown)
+end
+
+
+// --- Arrays and Dictionaries ----------------------
+box numberList <- [1, 2, 3, 4, 5]
+foreach value at index in numberList do
+    print(value)
+end
+
+print(numberList[-1]) // 5
+// runtime error: index '5' out of bounds
+print(numberList[5]) 
+
+box stringToNumDict <- {
+    "One" <- 1,
+    "Two" <- 2,
+    "Three" <- 3
+}
+
+box one <- stringToNumDict["One"]
+
+// runtime error: could not find key in dictionary
+box four <- stringToNumDict["Four"]
+
+// --- Shareables ---------------------------------------
+// By default boxes use value copy semantics.
+// Example 1:
+
+box numberList <- [1, 2, 3, 4, 5]
+
+// numberList copies here
+box numberListCopy <- numberList
+numberListCopy:append(6)
+print(numberList) // prints [1, 2, 3, 4, 5]
+
+// You can share an object's reference and store it
+// Example 1:
+box numberListRef <- share numberList
+numberListRef:append(6)
+print(numberList) // prints [1, 2, 3, 4, 5, 6]
+
+// Example 2:
+box testA <- [1, 2, 3]
+box testB <- share testA
+box testC <- testB // Fresh copy
+
+testA:append(4)
+print(testA)  // [1, 2, 3, 4]
+print(testB)  // [1, 2, 3, 4]
+print(testC)  // [1, 2, 3]
+
+// Functions can also take in refs
+box appendList <- function(list)
+    list:append("appended")
+end
+
+box testList <- ["a", "b", "c", "d", "e"]
+appendList(share testList)
+print(testList) // ["a", "b", "c", "d", "e", "appended"]
+
+// Functions can also force to pass a shareable
+box popList <- function(shared list)
+    list.pop()
+end
+
+box testList2 <- ["a", "b", "c", "d", "e"]
+
+// runtime error: expected a shared argument at argument 1
+popList(testList2)
+
+popList(share testList2)
+print(testList2)  // ["a", "b", "c", "d"]
+
+// Sharing a primitive is a no-op
+box a <- share 5
+// is conceptually same as
+box a <- 5
+
+// --- Things ----------------------
+box Dog <- thing // Create a new thing and stuff it inside the container Dog
+
+// User-defined constructor
+Dog.new <- function(name, age, sound)
+    // 'thing of Dog' is syntactic sugar for:
+    // box self <- thing
+    // self.__proto__ <- share Dog
+    // where __proto__ is another 'thing' to
+    // check when lookup fails
+    box self <- thing of Dog
+
+    self.name <- name
+    self.age <- age
+    self.sound <- sound
+    
+    // You can also add an initializer list:
+    // box self <- thing of Dog {
+    //      name <- name,
+    //      age <- age,
+    //      sound <- sound
+    // }
+
+    return self
+end
+
+Dog.birthday <- function(shared self)
+    self.age <- self.age + 1
+    print(self.name + " is turning " + string(self.age))
+end
+
+Dog.speak <- function(shared self)
+    print(self.name + " says " + self.sound + "!")
+end
+
+Dog.__tostring__ <- function(shared self)
+    return "<dog " + self.name + ">"
+end
+
+// Let's create a dog!
+box buddy <- Dog.new("Buddy", 4, "woof")
+buddy:birthday() // Buddy is turning 5
+buddy:birthday() // Buddy is turning 6
+
+// --- Fizzbuzz Sample Program ----------------------
+box fizzBuzz <- function(length)
+    box res <- []
+    count i from 0 to length do
+        if i % 3 = 0 and i % 5 = 0 then
+            res:append("fizzbuzz")
+        elseif i % 3 = 0 then
+            res:append("fizz")
+        elseif i % 5 = 0 then
+            res:append("buzz")
+        else
+            res:append(string(i))
+        end
+    end
+
+    return res
+end
+
+box res <- fizzBuzz(20)
+
+foreach s in res do
+    print(s)
+end
+
+// Fibonacci Program ------------------------
+
+box fib <- function(n)
+    if n < 2 then return n end
+    return fib(n - 2) + fib(n - 1)
+end
+
+box start <- clock()
+print(fib(35))
+print(clock() - start) // around 0.8 seconds currently

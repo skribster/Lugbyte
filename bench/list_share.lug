@@ -1,0 +1,16 @@
+box listShare <- function(n)
+    box list <- []
+    count i from 1 to n do
+        list:append(i)
+    end
+
+    box ref <- share list
+    count k from 1 to 100 do
+        ref <- share list
+    end
+    return ref
+end
+
+box start <- clock()
+print(listShare(100000))
+print(clock() - start)

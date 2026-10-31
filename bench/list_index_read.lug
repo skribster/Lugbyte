@@ -1,0 +1,16 @@
+box listIndexRead <- function(n)
+    box list <- []
+    count i from 0 to n - 1 do
+        list:append(i)
+    end
+
+    box sum <- 0
+    count k from 0 to n - 1 do
+        sum <- sum + list[k]
+    end
+    return sum
+end
+
+box start <- clock()
+print(listIndexRead(200000))
+print(clock() - start)

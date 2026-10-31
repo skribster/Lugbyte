@@ -1,0 +1,20 @@
+box firstOf <- function(list)
+    return list[0]
+end
+
+box passShared <- function(n)
+    box list <- []
+    count i from 1 to n do
+        list:append(i)
+    end
+
+    box acc <- 0
+    count k from 1 to 100 do
+        acc <- acc + firstOf(share list)
+    end
+    return acc
+end
+
+box start <- clock()
+print(passShared(100000))
+print(clock() - start)

@@ -1,0 +1,15 @@
+box listIndexWrite <- function(n)
+    box list <- []
+    count i from 0 to n - 1 do
+        list:append(0)
+    end
+
+    count k from 0 to n - 1 do
+        list[k] <- k
+    end
+    return list
+end
+
+box start <- clock()
+print(listIndexWrite(200000))
+print(clock() - start)

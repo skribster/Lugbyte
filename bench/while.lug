@@ -1,0 +1,13 @@
+box whileLoop <- function(n)
+    box sum <- 0
+    box i <- 1
+    while i <= n do
+        sum <- sum + i * 2
+        i <- i + 1
+    end
+    return sum
+end
+
+box start <- clock()
+print(whileLoop(1000000))
+print(clock() - start)

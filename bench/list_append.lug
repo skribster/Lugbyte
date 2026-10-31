@@ -1,0 +1,11 @@
+box listAppend <- function(n)
+    box list <- []
+    count i from 1 to n do
+        list:append(i)
+    end
+    return list
+end
+
+box start <- clock()
+print(listAppend(200000))
+print(clock() - start)

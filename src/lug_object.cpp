@@ -469,9 +469,9 @@ int ObjList::ClampIndex(int index) const {
 
 
 void ObjList::Set(int index, Value value) {
-    index = ClampIndex(index);
-    if (index == -1) throw vm.RuntimeError("index '%d' out of range", index);
-    items[index] = value;
+    int clampedIndex = ClampIndex(index);
+    if (clampedIndex == -1) throw vm.RuntimeError("index '%d' out of range", index);
+    items[clampedIndex] = value;
 }
 
 // ObjDict methods ------------------------------------

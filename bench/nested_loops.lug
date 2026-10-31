@@ -1,0 +1,13 @@
+box nestedLoops <- function(n)
+    box sum <- 0
+    count i from 1 to n do
+        count k from 1 to n do
+            sum <- sum + (i * k) % 7
+        end
+    end
+    return sum
+end
+
+box start <- clock()
+print(nestedLoops(1500))
+print(clock() - start)

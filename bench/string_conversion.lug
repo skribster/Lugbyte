@@ -1,0 +1,11 @@
+box stringConversion <- function(n)
+    box s <- ""
+    count i from 1 to n do
+        s <- s + string(i) + "-"
+    end
+    return s
+end
+
+box start <- clock()
+print(stringConversion(20000))
+print(clock() - start)

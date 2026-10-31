@@ -1,0 +1,16 @@
+box dictLookup <- function(n)
+    box d <- {}
+    count i from 1 to n do
+        d["key" + string(i)] <- i
+    end
+
+    box sum <- 0
+    count k from 1 to n do
+        sum <- sum + d["key" + string(k)]
+    end
+    return sum
+end
+
+box start <- clock()
+print(dictLookup(100000))
+print(clock() - start)

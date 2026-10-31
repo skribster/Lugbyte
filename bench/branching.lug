@@ -1,0 +1,20 @@
+// fizzbuzz conditionals w/o the i/o
+box branching <- function(n)
+    box fizz <- 0
+    box buzz <- 0
+    box both <- 0
+    count i from 1 to n do
+        if i % 3 = 0 and i % 5 = 0 then
+            both <- both + 1
+        elseif i % 3 = 0 then
+            fizz <- fizz + 1
+        elseif i % 5 = 0 then
+            buzz <- buzz + 1
+        end
+    end
+    return fizz + buzz + both
+end
+
+box start <- clock()
+print(branching(500000))
+print(clock() - start)

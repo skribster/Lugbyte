@@ -1,0 +1,29 @@
+box Point <- thing
+
+Point.new <- function(x, y)
+    box self <- thing of Point
+    self.x <- x
+    self.y <- y
+    return self
+end
+
+Point.lengthSq <- function(shared self)
+    return self.x * self.x + self.y * self.y
+end
+
+Point.move <- function(shared self, dx, dy)
+    self.x <- self.x + dx
+    self.y <- self.y + dy
+end
+
+box methodMutate <- function(n)
+    box p <- Point.new(0, 0)
+    count i from 1 to n do
+        p:move(1, 1)
+    end
+    return p.x
+end
+
+box start <- clock()
+print(methodMutate(500000))
+print(clock() - start)
