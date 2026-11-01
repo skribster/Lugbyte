@@ -106,7 +106,7 @@ private:
     
     Token Identifier();
     Token Number();
-    Token String();
+    Token String(char delimiter);
 
     bool IsAtEnd();
     void SkipWhitespace();

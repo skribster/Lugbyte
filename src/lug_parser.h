@@ -18,10 +18,10 @@ public:
     };
 
     bool IsAtEnd();
-
-    [[noreturn]] void ErrorAtCurrent(const char* message);
-    [[noreturn]] void Error(const char* message);
-    [[noreturn]] void ErrorAt(const Token& token, const char* message);
+    
+    [[noreturn]] void ErrorAtCurrent(const char* format, ...);
+    [[noreturn]] void Error(const char* format, ...);
+    [[noreturn]] void ErrorAt(const Token& token, const char* format, ...);
 
     Token previous;
     Token current;

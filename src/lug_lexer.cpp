@@ -163,9 +163,10 @@ Token Lexer::Number() {
 }
 
 
-Token Lexer::String() {
-    while (Peek() != '"' && !IsAtEnd()) {
+Token Lexer::String(char delimiter) {
+    while (Peek() != delimiter && !IsAtEnd()) {
         if (Peek() == '\n') return ErrorToken("unterminated string");
+        if (Peek() == '\\') Advance(); // Skip over any escape sequences.
         Advance();
     }
 
@@ -334,7 +335,10 @@ Token Lexer::ScanToken() {
             return MakeToken(Match('=') ? TokenType::GREATER_EQUAL : TokenType::GREATER);
         
         case '"':
-            return String();
+            return String('"');
+
+        case '\'': 
+            return String('\'');
     }
 
     return ErrorToken("unexpected character");

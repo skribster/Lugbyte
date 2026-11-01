@@ -235,7 +235,11 @@ void FunctionUnit::MarkInitialized() {
 
 ObjModule* Compiler::Compile(const char* source, std::filesystem::path modulePath) {
     parser.Reset(source, modulePath);
+    currentUnit = nullptr;
+    currentLoop = nullptr;
+    pendingName = Token::Synthetic("anonymous");
     currentScriptPath = modulePath;
+
     FunctionUnit unit{ vm, *this, parser };
     PushUnit(&unit, FunctionType::SCRIPT);
 
@@ -1536,10 +1540,41 @@ void Compiler::Number(bool canAssign) {
  * Emits a string into the bytecode stream.
  */
 void Compiler::String(bool canAssign) {
+    Vector<char> buffer(vm);
+    Token& string = parser.previous;
+
+    for (int i = 1; i < string.length - 1; i++) {
+        char character = string.start[i];
+        if (character != '\\') {
+            buffer.PushBack(character);  
+            continue;
+        }
+        
+        // Escape sequence handling ----------------
+        if (i + 1 >= string.length) break;
+        i++; // Consume the backslash
+        char nextCharacter = string.start[i];
+        switch (nextCharacter) {
+            case '\\': buffer.PushBack('\\'); break;
+            case '"':  buffer.PushBack('"'); break;
+            case '0':  buffer.PushBack('\0'); break;
+            case 'a':  buffer.PushBack('\a'); break;
+            case 'b':  buffer.PushBack('\b'); break;
+            case 'e':  buffer.PushBack('\33'); break;
+            case 'f':  buffer.PushBack('\f'); break;
+            case 'n':  buffer.PushBack('\n'); break;
+            case 'r':  buffer.PushBack('\r'); break;
+            case 't':  buffer.PushBack('\t'); break;
+
+            default:
+                parser.Error("Invalid escape character '%c'.", nextCharacter);
+        }
+    }
+
     ObjString* stringObject = ObjString::FromSource(
         vm,
-        parser.previous.start + 1, // Start right after the first quote
-        parser.previous.length - 2 // Account for the two quotes from beginning to end   
+        buffer.Data(),
+        buffer.Count()
     );
 
     EmitConstant(stringObject);
