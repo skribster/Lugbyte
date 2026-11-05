@@ -1,0 +1,7 @@
+box printList <- function(shared l)
+    write("[")
+    write(l:join(", "))
+    write("]\n")
+end
+
+printList(share [][0 to -1])

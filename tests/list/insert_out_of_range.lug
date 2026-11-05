@@ -1,0 +1,2 @@
+box a <- [1, 2, 3, 4, 5]
+a:insert(8, 1) // expect: runtime error: index out of range

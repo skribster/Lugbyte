@@ -305,7 +305,7 @@ ObjFunction* Compiler::PopUnit() {
     EmitReturn();
 
     ObjFunction* function = currentUnit->function;
-#ifdef LUG_DEBUG_PRINT_CODE
+#if LUG_DEBUG_PRINT_CODE
     Debug::DisassembleChunk(
         *CurrentChunk(), 
         function->name != nullptr 
@@ -1333,6 +1333,22 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
  */
 void Compiler::Index(bool canAssign) {
     Expression();
+
+    // expression[ a to b ]
+    if (parser.Match(TokenType::TO)) {
+        if (parser.Match(TokenType::RIGHT_BRACKET)) {
+            EmitByte(OpCode::NIL);
+        } else {
+            Expression();
+        }
+
+        EmitByte(OpCode::SLICE);
+        parser.Consume(TokenType::RIGHT_BRACKET, "expected ']' after slice");
+        
+        return;
+    }
+
+    // collection[ a ]
     parser.Consume(TokenType::RIGHT_BRACKET, "expected ']' after index");
 
     if (canAssign && parser.Match(TokenType::LEFT_ARROW)) {

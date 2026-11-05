@@ -1,0 +1,2 @@
+box s <- ""
+print(s[0 to -1])

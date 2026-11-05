@@ -68,6 +68,7 @@
     OPCODE(SET_INDEX)               \
     OPCODE(GET_ATTRIBUTE)           \
     OPCODE(SET_ATTRIBUTE)           \
+    OPCODE(SLICE)                   \
                                     \
     OPCODE(RETURN)
 

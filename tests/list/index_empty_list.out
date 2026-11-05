@@ -1,0 +1,3 @@
+runtime error: index '0' out of range
+stack traceback:
+    tests:2: in script

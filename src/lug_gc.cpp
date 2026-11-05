@@ -16,7 +16,7 @@ GC::~GC() {
 
 void GC::Collect() {
 
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf("--gc begin\n");
     std::size_t before = bytesAllocated;
 #endif
@@ -28,7 +28,7 @@ void GC::Collect() {
 
     nextGC = bytesAllocated * HEAP_GROW_FACTOR;
 
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf("--gc end\n");
     std::printf(
         "collected %zu bytes (from %zu to %zu) next at %zu\n",
@@ -56,7 +56,7 @@ void GC::MarkObject(Obj* obj) {
     */
     if (obj->isMarked) return;
 
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf("%p mark ", static_cast<void*>(obj));
     Value::Print(obj);
     std::printf("\n");
@@ -125,7 +125,7 @@ void GC::TraceReferences() {
  * its object references and marking those as well.
  */
 void GC::BlackenObject(Obj* obj) {
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf("%p blacken ", static_cast<void*>(obj));
     Value::Print(obj);
     std::printf("\n");
@@ -137,7 +137,7 @@ void GC::BlackenObject(Obj* obj) {
 // Free methods -----------------------------------
 
 void GC::FreeObject(Obj* obj) {
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf("%p free ", static_cast<void*>(obj));
     Value::Print(obj);
     std::printf("\n");

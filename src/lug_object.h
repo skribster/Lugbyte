@@ -56,6 +56,9 @@ struct ObjString : Obj {
     ObjString* ToString() override;
     void Blacken(GC& gc) override {} // Nothing to blacken
 
+    ObjString* Sub(int start, int end);
+    ObjString* Concatenate(ObjString* other);
+
     // Factory methods to create a new ObjString on the heap
     static ObjString* FromSource(VMCore& vm, const char* original, std::size_t length);
     static ObjString* FromLiteral(VMCore& vm, const char* literal);
@@ -182,16 +185,18 @@ struct ObjList : Obj {
     ObjString* ToString() override;
     void Blacken(GC& gc) override;
     Obj* Copy() override;
-    void MakeUnique();
-
+    
     // An ObjList is just a wrapper for a dynamic array.
     ItemBuffer* items{ nullptr };
-
+    void MakeUnique();
+    
     void Append(Value value);
     Value* Get(int index);
     void Set(int index, Value value);
-    int ClampIndex(int index) const;
+    void Insert(int index, Value value);
+    Value Pop(int index);
     int Count() const;
+    ObjList* Slice(int start, int end);
 
     Vector<Value>::Iterator begin() { return items->data.begin(); }
     Vector<Value>::Iterator end() { return items->data.end(); }

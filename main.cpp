@@ -42,7 +42,6 @@ static std::string ReadFile(std::string_view path) {
 }
 
 static void RunFile(Luggage::VM& vm, std::string_view path) {
-    std::string source = ReadFile(path);
     Luggage::InterpretResult result = vm.InterpretFile(path);
 
     if (result == Luggage::InterpretResult::OK) return;
@@ -50,7 +49,9 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
     const Luggage::LugError& error = vm.LastError();
     std::cerr << error.message << std::endl;
 
+    // Exit codes consistent with the Unix sysexits.h standard
     if (result == Luggage::InterpretResult::COMPILE_ERROR) exit(65);
+    if (result == Luggage::InterpretResult::FILE_ERROR) exit(66);
     if (result == Luggage::InterpretResult::RUNTIME_ERROR) exit(70);
     if (result == Luggage::InterpretResult::MEMORY_ERROR) exit(1); 
 }

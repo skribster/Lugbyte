@@ -54,7 +54,7 @@ static T* AllocateObject(VMCore& vm) {
     
     vm.AddObject(object);
 
-#ifdef LUG_DEBUG_LOG_GC
+#if LUG_DEBUG_LOG_GC
     std::printf(
         "%p allocate %zu for %s\n", 
         static_cast<void*>(object), 
@@ -65,6 +65,24 @@ static T* AllocateObject(VMCore& vm) {
 
     return object;
 }
+
+
+/**
+ * Clamps the index and loops it back around given the
+ * range of 0-numItems.
+ */
+static inline int ClampIndex(int index, int numItems) {
+    ASSERT(numItems != 0, "numItems is zero");
+    return ((index % numItems) + numItems) % numItems; 
+}
+
+
+static inline int ClampIndexWithBounds(int index, int numItems) {
+    if (numItems == 0 || index >= numItems) return -1;
+    
+    return ClampIndex(index, numItems);
+}
+
 
 // Obj methods ------------------------------------
 
@@ -252,6 +270,40 @@ ObjString* ObjString::ToString() {
 }
 
 
+ObjString* ObjString::Sub(int start, int end) {
+    if (length == 0) return ObjString::FromLiteral(vm, "");
+
+    int clampedStart = ClampIndex(start, length);
+    int clampedEnd = ClampIndex(end, length);
+
+    // "string"[5 to 3] will just return an empty string to keep consistent
+    // with list behavior where start > end will return an empty list
+    if (clampedStart > clampedEnd) return ObjString::FromLiteral(vm, "");
+
+    ObjString* sub = ObjString::FromSource(
+        vm,
+        characters + clampedStart,
+        clampedEnd - clampedStart + 1 // +1 to include the end character
+    );
+    
+    return sub;
+}
+
+
+ObjString* ObjString::Concatenate(ObjString* other) {
+    std::size_t totalLength = length + other->length;
+    char* combinedChars = Memory::Allocate<char>(vm, totalLength + 1);
+
+    std::memcpy(combinedChars, characters, length);
+    std::memcpy(combinedChars + length, other->characters, other->length);
+    combinedChars[totalLength] = '\0';
+
+    ObjString* result = ObjString::FromAllocated(vm, combinedChars, totalLength);
+
+    return result;
+}
+
+
 // ObjFunction methods ------------------------------------
 
 ObjFunction* ObjFunction::New(VMCore& vm) {
@@ -414,7 +466,6 @@ ObjString* ObjNative::ToString() {
 
 // ObjList methods ------------------------------------
 
-
 ObjList* ObjList::New(VMCore& vm) {
     // We allocate this before ObjList*, because Memory::Allocate
     // can possibly trigger a GC. If wew allocate it after AllocateObject,
@@ -437,9 +488,9 @@ ObjList::~ObjList() {
 
 void ObjList::Print() {
     std::printf("[ ");
-    for (std::size_t i = 0; i < items->data.Count(); i++) {
+    for (std::size_t i = 0; i < Count(); i++) {
         Value::Print(items->data[i]);
-        if (i != items->data.Count() - 1) std::printf(", ");
+        if (i != Count() - 1) std::printf(", ");
     }
 
     std::printf(" ]");
@@ -487,6 +538,27 @@ void ObjList::MakeUnique() {
 }
 
 
+ObjList* ObjList::Slice(int start, int end) {
+    if (Count() == 0) return ObjList::New(vm);
+
+    int clampedStart = ClampIndex(start, Count());
+    int clampedEnd = ClampIndex(end, Count());
+
+    ObjList* sliced = ObjList::New(vm);
+    vm.stack.Push(sliced);
+
+    for (int i = clampedStart; i <= clampedEnd; i++) {
+        Value item = Get(i)->Copy();
+        vm.stack.Push(item);
+        sliced->Append(item);
+        vm.stack.Pop();
+    }
+
+    vm.stack.Pop(); // sliced
+    return sliced;
+}
+
+
 void ObjList::Append(Value value) {
     if (items->refCount > 1) MakeUnique();
 
@@ -495,9 +567,8 @@ void ObjList::Append(Value value) {
 
 
 Value* ObjList::Get(int index) {
-    index = ClampIndex(index);
-    if (index == -1) return nullptr;
-
+    int clampedIndex = ClampIndexWithBounds(index, Count());
+    if (clampedIndex == -1) return nullptr;
     /*
         If the getter returns a child that is a list, we want
         to make sure that the current list has a unique buffer. This is 
@@ -514,31 +585,11 @@ Value* ObjList::Get(int index) {
 
         Without this, b and a will have the same contents.
     */
-    if (items->refCount > 1 && items->data[index].IsObj(ObjType::LIST)) {
+    if (items->refCount > 1 && items->data[clampedIndex].IsObj(ObjType::LIST)) {
         MakeUnique();
     }
 
-    return &items->data[index];
-}
-
-
-int ObjList::ClampIndex(int index) const {
-    int numItems = static_cast<int>(items->data.Count());
-
-    // We can't index on an empty array anyway.
-    if (numItems == 0) return -1;
-
-    // This handles the wrap-around case for negative numbers.
-    if (index < 0) {
-        return ((index % numItems) + numItems) % numItems; 
-    }
-
-    // -1 because itemCount starts at 1, while indices start at 0
-    if (index > numItems - 1) {
-        return -1;
-    }
-
-    return index;
+    return &items->data[clampedIndex];
 }
 
 
@@ -548,12 +599,32 @@ int ObjList::Count() const {
 
 
 void ObjList::Set(int index, Value value) {
-    int clampedIndex = ClampIndex(index);
+    int clampedIndex = ClampIndexWithBounds(index, Count());
     if (clampedIndex == -1) throw vm.RuntimeError("index '%d' out of range", index);
-    
+
     if (items->refCount > 1) MakeUnique();
 
     items->data[clampedIndex] = value;
+}
+
+
+void ObjList::Insert(int index, Value value) {
+    int clampedIndex = ClampIndexWithBounds(index, Count());
+    if (clampedIndex == -1) throw vm.RuntimeError("index '%d' out of range", index);
+
+    items->data.Insert(clampedIndex, value);
+}
+
+
+Value ObjList::Pop(int index) {
+    int clampedIndex = ClampIndexWithBounds(index, Count());
+    if (clampedIndex == -1 || Get(clampedIndex) == nullptr) {
+        throw vm.RuntimeError("index '%d' out of range", index);
+    }
+
+    Value oldItem = *Get(clampedIndex);
+    items->data.Erase(clampedIndex);
+    return oldItem;
 }
 
 
@@ -652,12 +723,12 @@ ObjString* ObjThing::ToString() {
 
     // If we find a __tostring__ dunder in our attributes,
     // we should call it.
-    if (stringDunder != nullptr) {
+    if (stringDunder != nullptr && stringDunder->IsObj(ObjType::CLOSURE)) {
         vm.stack.Push(*stringDunder);
         vm.stack.Push(this);
 
         // We will 'share' the thing.
-        vm.CallValue(*stringDunder, 1, 0b1);
+        vm.Call(stringDunder->AsObj<ObjClosure>(), 1, 0b1);
         Value result = vm.stack.Pop();
         if (!result.IsObj(ObjType::STRING)) {
             throw vm.RuntimeError("'__tostring__' must return a string, returned '%s' instead", result.StringType());
@@ -677,6 +748,7 @@ void ObjThing::Blacken(GC& gc) {
 
 Obj* ObjThing::Copy() {
     ObjThing* copy = ObjThing::New(vm);
+    vm.stack.Push(copy);
 
     for (auto& attribute : attributes) {
         Value name = attribute.key.Copy();
@@ -685,6 +757,7 @@ Obj* ObjThing::Copy() {
         copy->Set(name.AsObj<ObjString>(), value);
     }
     
+    vm.stack.Pop();
     return copy;
 }
 

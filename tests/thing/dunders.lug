@@ -1,0 +1,21 @@
+box a <- thing
+a.items <- [1,2,3,4,5]
+
+a.__slice__ <- function(shared self, start, stop)
+    return self.items[start to stop]
+end
+
+
+a.__index__ <- function(shared self, index)
+    return self.items[index]
+end
+
+
+a.__tostring__ <- function(shared self)
+    return "a"
+end
+
+
+print(a[1])                 // expect: 2
+print(a[2 to 4]:sum())      // expect: 12
+print(a)                    // expect: a

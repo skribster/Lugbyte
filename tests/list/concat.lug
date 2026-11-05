@@ -1,0 +1,13 @@
+box a <- [1, 2, 3]
+a <- a:concat([100, 200, 300]) 
+
+// expect:
+// 1
+// 2
+// 3
+// 100
+// 200
+// 300
+foreach item in a do
+    print(item)
+end

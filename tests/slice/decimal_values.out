@@ -1,0 +1,3 @@
+runtime error: slice start value must be an integer
+stack traceback:
+    tests:2: in script

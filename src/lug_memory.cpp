@@ -3,9 +3,9 @@
 #include "lug_memory.h"
 #include "lug_vm.h"
 
-#ifdef LUG_DEBUG_LOG_GC
-#include <cstdio>
-#include "lug_debug.h"
+#if LUG_DEBUG_LOG_GC
+    #include <cstdio>
+    #include "lug_debug.h"
 #endif
 
 namespace Luggage::Memory {
@@ -15,9 +15,9 @@ void* Reallocate(VMCore& vm, void* pointer, std::size_t oldSize, std::size_t new
     gc.bytesAllocated += newSize - oldSize;
     
     if (newSize > oldSize) {
-        #ifdef LUG_DEBUG_STRESS_GC
+    #if LUG_DEBUG_STRESS_GC
         vm.CollectGarbage();
-        #endif
+    #endif
     }
 
     if (newSize > oldSize && gc.bytesAllocated > gc.nextGC) {

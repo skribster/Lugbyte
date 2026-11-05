@@ -63,7 +63,7 @@ count incrementer2 from 0 to 10 do
     print(incrementer2)
 end
 
-// The 'stop' value is inclusive.
+// The 'end' value is inclusive.
 // Expect: 10 9 8 7 6 5 4 3 2 1 0
 count countdown from 10 to 0 by -1 do
     print(countdown)
@@ -77,7 +77,7 @@ foreach value at index in numberList do
 end
 
 print(numberList[-1]) // 5
-// runtime error: index '5' out of bounds
+// runtime error: index '5' out of range
 print(numberList[5]) 
 
 box stringToNumDict <- {

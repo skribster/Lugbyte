@@ -1,0 +1,13 @@
+box a <- [1, 2, 3, 4, 5]
+a:insert(2, 100)
+
+// expect: 
+// 1
+// 2
+// 100
+// 3
+// 4
+// 5
+foreach item in a do
+    print(item)
+end

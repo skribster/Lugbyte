@@ -1,0 +1,3 @@
+runtime error: value of type 'dict' is not sliceable
+stack traceback:
+    tests:2: in script

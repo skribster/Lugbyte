@@ -2,7 +2,7 @@
 
 #include <utility>
 #include <type_traits>
-#include <new>
+#include <cstring>
 
 #include "lug_common.h"
 #include "lug_memory.h"
@@ -155,27 +155,73 @@ public:
     // Methods ----------------------
     
     void PushBack(const T& value) {
+        /*
+            If we pass in a reference to the table in PushBack, such as...
+            a.PushBack(a[0]), there's a chance that before we actually set
+            data[count] = copy, the table reallocates. If Reallocate moves
+            the memory address of the data, a[0] could point to the old 
+            block.
+            
+            To fix this, we instead make a snapshot of the value before
+            we actually reallocate.
+        */
+        T copy = value;
+
         if (count >= capacity) Reallocate(Memory::GrowCapacity(capacity));
 
-        data[count] = value;
+        data[count] = copy;
         count++;
     }
-
 
     void PushBack(T&& value) {
+        T copy = std::move(value);
         if (count >= capacity) Reallocate(Memory::GrowCapacity(capacity));
 
-        data[count] = std::move(value);
+        data[count] = std::move(copy);
         count++;
     }
 
+    void Insert(std::size_t index, const T& value) {
+        ASSERT(index <= count, "index out of range");
+
+        T copy = value;
+        if (count >= capacity) Reallocate(Memory::GrowCapacity(capacity));
+        for (std::size_t i = count; i > index; i--) {
+            data[i] = data[i - 1];
+        }
+        
+        data[index] = copy;
+        count++;
+    }
+
+    void Append(const T* source, std::size_t numItems) {
+        if (numItems == 0) return;
+        if (count + numItems > capacity) {
+            Reallocate(Memory::GrowCapacity(capacity));
+        }
+
+        std::memcpy(data + count, source, numItems * sizeof(T));
+        count += numItems;
+    }
 
     template<typename... Args>
     T& EmplaceBack(Args&&... args) {
+        T temp(std::forward<Args>(args)...);
         if (count >= capacity) Reallocate(Memory::GrowCapacity(capacity));
 
-        new (&data[count]) T(std::forward<Args>(args)...);
+        new (&data[count]) T(std::move(temp));
         return data[count++];
+    } 
+
+    void Erase(std::size_t index) {
+        ASSERT(index < count, "index out of range");
+        
+        data[index].~T();
+        for (int i = index; i < count - 1; i++) {
+            data[i] = data[i + 1];
+        }
+
+        count--;
     } 
 
     void PopBack() {
@@ -195,6 +241,24 @@ public:
         count = 0;
     }
 
+    void ShrinkToFit() {
+        if (count == capacity) return;
+        Reallocate(count);
+    }
+
+    T* TakeOwnership(std::size_t& outCapacity, std::size_t& outCount) {
+        T* result = data;
+
+        outCapacity = capacity;
+        outCount = count;
+
+        data = nullptr;
+        capacity = 0;
+        count = 0;
+
+        return result;
+    }
+
     // Getters/setters -----------------
     
     std::size_t Count() const { return count; }
@@ -205,12 +269,12 @@ public:
     // Index operator ------------------
 
     T& operator[](std::size_t index) {
-        ASSERT(index < count, "index out of bounds");
+        ASSERT(index < count, "index out of range");
         return data[index];
     }
 
     const T& operator[](std::size_t index) const {
-        ASSERT(index < count, "index out of bounds");
+        ASSERT(index < count, "index out of range");
         return data[index];
     }
 

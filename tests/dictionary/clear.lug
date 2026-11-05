@@ -1,0 +1,14 @@
+box getSum <- function(shared a)
+    box sum <- 0
+    foreach value at key in a do
+        sum <- sum + value
+    end
+
+    return sum
+end
+
+box a <- {"a" <- 1, "b" <- 2, "c" <- 3}
+print(getSum(share a)) // expect: 6
+
+a:clear()
+print(getSum(share a)) // expect: 0

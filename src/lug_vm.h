@@ -100,14 +100,15 @@ public:
     void Call(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared = 0);
     ObjUpvalue* CaptureUpvalue(Value* local);
     void CloseUpvalues(Value* last);
-    
     ObjThing* GetProtoOf(Value value) const;
-    Value Deepcopy(const Value& value);
     
     std::string StackTraceback();
     void PushError(LugError error);
     template<typename... Args>
     LugError RuntimeError(const char* format, Args... args);
+
+    template<typename... Args>
+    std::string ErrorMessage(const char* kind, const char* format, Args... args);
     
     // Member variables -------------------
     Compiler compiler;
@@ -123,7 +124,6 @@ public:
     VMConfig config;
     
 private:
-    void Concatenate();
     void Run();
     
     LugError lastError;
@@ -134,23 +134,39 @@ private:
 
 
 template<typename... Args>
-LugError VMCore::RuntimeError(const char* message, Args... args) {
+std::string VMCore::ErrorMessage(const char* kind, const char* format, Args... args) {
     // Compute required length for the std::string
-    int length = std::snprintf(nullptr, 0, message, args...);
+    int length = std::snprintf(nullptr, 0, format, args...);
     ASSERT(length, "snprintf formatting error");
     // Allocate exactly enough space
     std::string formatted(length, '\0');
     // Format the error message with the args
-    std::snprintf(formatted.data(), static_cast<std::size_t>(length) + 1, message, args...);
+    std::snprintf(formatted.data(), static_cast<std::size_t>(length) + 1, format, args...);
 
     std::string errorMessage;
-    errorMessage += "runtime error: ";
+    errorMessage += kind;
+    errorMessage += " error: ";
     errorMessage += formatted;
-    errorMessage += '\n';
+
+    return errorMessage;
+}
+
+
+template<typename... Args>
+LugError VMCore::RuntimeError(const char* format, Args... args) {
+    std::string errorMessage = ErrorMessage("runtime", format, args...);
+    errorMessage += "\n";
     errorMessage += StackTraceback();
+
+    // Get line number of the current instruction
+    CallFrame* frame = stack.GetFrame();
+    ObjFunction* function = frame->closure->function;
+    std::size_t instruction = frame->ip - function->chunk.bytecode.Data() - 1;
+    std::size_t line = function->chunk.GetLine(instruction);
 
     LugError error;
     error.type = InterpretResult::RUNTIME_ERROR;
+    error.line = static_cast<int>(line);
     error.message = errorMessage;
 
     ObjString* messageValue = ObjString::FromSource(
@@ -162,6 +178,5 @@ LugError VMCore::RuntimeError(const char* message, Args... args) {
 
     return error;
 }
-
 
 }

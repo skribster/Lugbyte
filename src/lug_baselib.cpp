@@ -21,7 +21,11 @@ static Value Write(VMCore& vm, Value* args, std::size_t argCount) {
         Value value = args[i];;
         ObjString* stringed = value.ToString(vm);
 
-        writer(stringed->characters);
+        // The user may define a null terminator in their string. Since std::string_view
+        // uses strlen in their default constructor, we instead use the explicit constructor
+        // that takes in the length of the string, and we'll pass THAT into the writer function
+        std::string_view stringView{ stringed->characters, stringed->length };
+        writer(stringView);
     }
 
     return Value::Nil();

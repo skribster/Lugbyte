@@ -1,0 +1,10 @@
+box printList <- function(shared l)
+    write("[")
+    write(l:join(", "))
+    write("]\n")
+end
+
+box a <- [1, 2, 3, 4]
+printList(share a[0 to 3]) // expect: [1, 2, 3, 4]
+printList(share a[1 to 3]) // expect: [2, 3, 4]
+printList(share a[0 to 2]) // expect: [1, 2, 3]

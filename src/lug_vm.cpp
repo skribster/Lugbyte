@@ -155,28 +155,6 @@ void VMCore::PushError(LugError error) {
 
 
 /**
- * Tries to concatenate the two most recent values onto 
- * the stack, assuming they are of type ObjString.
- * Then, pushes back the concatenated result.
- */
-void VMCore::Concatenate() {
-    ObjString* b = stack.Peek(0).AsObj<ObjString>();
-    ObjString* a = stack.Peek(1).AsObj<ObjString>();
-
-    std::size_t length = a->length + b->length;
-    char* chars = Memory::Allocate<char>(*this, length + 1);
-    std::memcpy(chars, a->characters, a->length);
-    std::memcpy(chars + a->length, b->characters, b->length);
-    chars[length] = '\0';
-
-    ObjString* result = ObjString::FromAllocated(*this, chars, length);
-    stack.Pop();
-    stack.Pop();
-    stack.Push(result);
-}
-
-
-/**
  * Defines a single native function as a global with 
  * the given name.
  */
@@ -341,7 +319,7 @@ bool VMCore::CallValue(Value value, std::uint8_t argCount, std::uint8_t shared) 
                 const Value* callDunder = thing->Get("__call__");
                 if (callDunder == nullptr) break;
                 
-                return CallValue(*callDunder, argCount, shared);;
+                return CallValue(*callDunder, argCount, shared);
             }
 
             default: {
@@ -431,7 +409,7 @@ void VMCore::Run() {
 
 
     // Dispatch table shenanigans -------------------
-#ifdef LUG_DEBUG_TRACE_EXECUTION
+#if LUG_DEBUG_TRACE_EXECUTION
     #define TRACE_EXECUTION()                                                               \
     do {                                                                                    \
         std::printf("          ");                                                          \
@@ -447,7 +425,7 @@ void VMCore::Run() {
     #define TRACE_EXECUTION() ((void)0)
 #endif
 
-#ifdef LUG_USE_COMPUTED_GOTO
+#if LUG_COMPUTED_GOTO
     static void* dispatchTable[] = {
         #define OPCODE(name) &&CASE_##name,
         OPCODE_LIST
@@ -526,7 +504,15 @@ void VMCore::Run() {
 
         CASE(ADD): {
             if (stack.Peek(0).IsObj(ObjType::STRING) && stack.Peek(1).IsObj(ObjType::STRING)) {
-                Concatenate();
+                ObjString* b = stack.Peek(0).AsObj<ObjString>();
+                ObjString* a = stack.Peek(1).AsObj<ObjString>();
+                ObjString* concatenated = a->Concatenate(b);
+                
+                stack.Pop();
+                stack.Pop();
+                stack.Push(concatenated);
+                
+                
             } else if (stack.Peek(0).IsNumber() && stack.Peek(1).IsNumber()) {
                 double b = stack.Pop().AsNumber();
                 double a = stack.Pop().AsNumber();
@@ -538,7 +524,6 @@ void VMCore::Run() {
                     stack.Peek(1).StringType(), 
                     stack.Peek(0).StringType()
                 );
-                return;
             }
 
             DISPATCH();
@@ -756,14 +741,16 @@ void VMCore::Run() {
                 ObjList* list = iterable.AsObj<ObjList>();
                 if (!key.IsNumber()) key = 0;
 
+                // Check if the index is the same or higher as the count of the list
+                if (static_cast<std::size_t>(key.AsInteger()) >= list->Count()) {
+                    JUMP_FORWARD(jumpToEnd);
+                    DISPATCH();
+                }
+
                 // list->Get may return nullptr if the index is out of range.
                 const Value* listValue = list->Get(key.AsNumber());
                 ASSERT(listValue != nullptr, "the foreach index is out of range");
                 value = *listValue;
-                
-                if (static_cast<std::size_t>(key.AsInteger()) >= list->Count()) {
-                    JUMP_FORWARD(jumpToEnd);
-                }
             } 
             
             else if (iterable.IsObj(ObjType::DICT)) {
@@ -874,7 +861,7 @@ void VMCore::Run() {
                 stack.Pop();
                 stack.Push(copy);
             } else {
-            #ifdef LUG_DEBUG_PRINT_CODE
+            #if LUG_DEBUG_PRINT_CODE
                 std::printf("          (unchanged)\n");
             #endif
             }
@@ -1003,7 +990,7 @@ void VMCore::Run() {
             }
 
             // If we still haven't gotten the 'thing' yet, we throw an error.
-            if (thing == nullptr) {
+            if (thing == nullptr || thing->Get(methodName) == nullptr) {
                 throw RuntimeError(
                     "method '%s' does not exist in value of type '%s'", 
                     methodName->characters, 
@@ -1012,6 +999,7 @@ void VMCore::Run() {
             }
             
             const Value* value = thing->Get(methodName);
+            
             stack.Push(*value);
             stack.Push(object);
 
@@ -1101,49 +1089,63 @@ void VMCore::Run() {
             // [ collection ][ index ]
             //                 ^^^^^ stackTop. You are here.
             Value& collection = stack.Peek(1);
-            if (!collection.IsObj(ObjType::LIST) && !collection.IsObj(ObjType::DICT)) {
-                throw RuntimeError("value of type '%s' is not indexable", collection.StringType());
-            }
             
-            switch (collection.AsObj()->type) {
-                case ObjType::LIST: {
-                    if (!stack.Peek(0).IsInteger()) throw RuntimeError("list index must be an integer");
-                    
-                    ObjList* list = collection.AsObj<ObjList>();
-                    int index = stack.Peek(0).AsInteger();
-                    const Value* value = list->Get(index);
-                    if (value == nullptr) {
-                        throw RuntimeError("index '%d' out of bounds", index);
-                    }
+            if (collection.IsObj(ObjType::LIST)) {
+                if (!stack.Peek(0).IsInteger()) throw RuntimeError("list index must be an integer");
+                
+                ObjList* list = collection.AsObj<ObjList>();
 
-                    stack.Pop(); // Index
-                    stack.Pop(); // Collection
+                int index = stack.Peek(0).AsInteger();
+                const Value* value = list->Get(index);
+                if (value == nullptr) throw RuntimeError("index '%d' out of range", index);
 
-                    // Leave only the value of the indexed list.
-                    stack.Push(*value);
+                stack.Pop(); // Index
+                stack.Pop(); // Collection
 
-                    break;
+                // Leave only the value of the indexed list.
+                stack.Push(*value);
+
+                DISPATCH();
+            }
+
+            if (collection.IsObj(ObjType::DICT)) {
+                ObjDict* dict = collection.AsObj<ObjDict>();
+
+                Value& key = stack.Peek(0);
+                const Value* value = dict->Get(key);
+                if (value == nullptr) {
+                    throw RuntimeError("could not find key in dictionary");
                 }
 
-                case ObjType::DICT: {
-                    ObjDict* dict = collection.AsObj<ObjDict>();
+                stack.Pop(); // Key
+                stack.Pop(); // Collection
+                stack.Push(*value);
 
-                    Value& key = stack.Peek(0);
-                    const Value* value = dict->Get(key);
-                    if (value == nullptr) {
-                        throw RuntimeError("could not find key in dictionary");
+                DISPATCH();
+            }
+
+            if (collection.IsObj(ObjType::THING)) {
+                ObjThing* thing = collection.AsObj<ObjThing>();
+
+                const Value* indexDunder = thing->Get("__index__");
+                if (indexDunder) {
+                    Value index = stack.Pop(); // Index
+                    stack.Pop(); // Collection
+
+                    stack.Push(*indexDunder);
+                    stack.Push(thing);
+                    stack.Push(index);
+
+                    if (CallValue(*indexDunder, 2, 0b1)) {
+                        frame = stack.GetFrame();
+                        module = frame->closure->module;
                     }
 
-                    stack.Pop(); // Key
-                    stack.Pop(); // Collection
-                    
-                    stack.Push(*value);
-
-                    break;
+                    DISPATCH();
                 }
             }
 
-            DISPATCH();
+            throw RuntimeError("value of type '%s' is not indexable", collection.StringType());
         }
         
         CASE(SET_INDEX): {
@@ -1289,6 +1291,57 @@ void VMCore::Run() {
             );
         }
 
+        CASE(SLICE): {
+            // [ object ][ start ][ end ]
+            //     2         1       0
+
+            if (!stack.Peek(1).IsInteger()) throw RuntimeError("slice start value must be an integer");
+            if (!stack.Peek(0).IsInteger()) throw RuntimeError("slice end value must be an integer");
+
+            int end = stack.Pop().AsInteger();
+            int start = stack.Pop().AsInteger();
+
+            Value object = stack.Pop();
+
+            if (object.IsObj(ObjType::LIST)) {
+                stack.Push(object.AsObj<ObjList>()->Slice(start, end));
+                DISPATCH();
+            }
+
+            if (object.IsObj(ObjType::STRING)) {
+                ObjString* string = object.AsObj<ObjString>();
+                stack.Push(string->Sub(start, end));
+
+                DISPATCH();
+            }
+
+            if (object.IsObj(ObjType::THING)) {
+                ObjThing* thing = object.AsObj<ObjThing>();
+
+                const Value* sliceDunder = thing->Get("__slice__");
+                if (sliceDunder != nullptr) {
+                    stack.Push(*sliceDunder);
+                    // [ __slice__ ][ object ][ start ][ end ]
+                    //   ^^^^^^^^^    ^^^^^^^^^^^^^^^^^^^^^^
+                    //    dunder              args (x3)
+                    stack.Push(object); // (shared)
+                    stack.Push(start);
+                    stack.Push(end);
+
+                    if (CallValue(*sliceDunder, 3, 0b001)) {
+                        frame = stack.GetFrame();
+                        module = frame->closure->module;
+                    }
+
+                    DISPATCH();
+                }
+
+            }
+
+            throw RuntimeError("value of type '%s' is not sliceable", object.StringType());
+        }
+
+
         CASE(RETURN): {
             Value result = stack.Pop();
             CloseUpvalues(frame->slots);
@@ -1335,7 +1388,8 @@ VM::~VM() = default;
 InterpretResult VM::InterpretFile(fs::path filePath) {
     auto resolved = Filesystem::ResolveModulePath("", filePath);
     if (!resolved) {
-        LugError fileError = core->RuntimeError("could not find script '%s'", filePath.string().c_str());
+        LugError fileError;
+        fileError.message = core->ErrorMessage("file", "could not find script '%s'", filePath.string().c_str());
         fileError.type = InterpretResult::FILE_ERROR;
         core->PushError(fileError);
 
@@ -1344,7 +1398,8 @@ InterpretResult VM::InterpretFile(fs::path filePath) {
 
     auto source = Filesystem::ReadModule(filePath);
     if (!source) {
-        LugError fileError = core->RuntimeError("could not load file '%s'", filePath.string().c_str());
+        LugError fileError;
+        fileError.message = core->ErrorMessage("file", "could not load file '%s'", filePath.string().c_str());
         fileError.type = InterpretResult::FILE_ERROR;
         core->PushError(fileError);
 

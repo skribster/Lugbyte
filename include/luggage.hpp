@@ -32,6 +32,7 @@ enum class LibInclude : unsigned {
 struct LugError {
     InterpretResult type;
     std::string message;
+    int line;
 };  
 
 
