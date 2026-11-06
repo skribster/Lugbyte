@@ -1,4 +1,5 @@
 box Lexer <- unbox("src/lexer")
-
-box newLexer <- Lexer.new("box a <- 5")
+// box newLexer <- Lexer.new("(())\n[[]]\n,.      +-?:;*%")
 box tokens <- newLexer:scanTokens()
+
+print(tokens:join("\n"))

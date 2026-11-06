@@ -58,6 +58,7 @@ struct ObjString : Obj {
 
     ObjString* Sub(int start, int end);
     ObjString* Concatenate(ObjString* other);
+    const char* CharAt(int index);
 
     // Factory methods to create a new ObjString on the heap
     static ObjString* FromSource(VMCore& vm, const char* original, std::size_t length);

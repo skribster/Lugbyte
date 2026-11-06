@@ -6,12 +6,116 @@ box Lexer <- thing
 
 Lexer.new <- function(source)
     return thing of Lexer {
-        source <- source
+        source <- source,
+        start <- 0,
+        current <- 0,
+        line <- 1,
+        tokens <- []
     }
 end
 
 Lexer.scanTokens <- function(shared self)
-    return [Token.new(Token.Type.EOF, "", "", 1)]
+    while not self:isAtEnd() do
+        self.start <- self.current
+        self:scanToken()
+    end
+
+    self.tokens:append(Token.new(Token.Type.EOF, "", "", self.line))
+
+    return self.tokens
+end
+
+Lexer.scanToken <- function(shared self)
+    box character <- self:advance()
+    inspect character
+        when '(' do self:addToken(Token.Type.LEFT_PAREN, nil) end
+        when ')' do self:addToken(Token.Type.RIGHT_PAREN, nil) end
+        when '{' do self:addToken(Token.Type.LEFT_BRACE, nil) end
+        when '}' do self:addToken(Token.Type.RIGHT_BRACE, nil) end
+        when '[' do self:addToken(Token.Type.LEFT_BRACKET, nil) end
+        when ']' do self:addToken(Token.Type.RIGHT_BRACKET, nil) end
+        when ',' do self:addToken(Token.Type.COMMA, nil) end
+        when '.' do self:addToken(Token.Type.DOT, nil) end
+        when '-' do self:addToken(Token.Type.MINUS, nil) end
+        when '+' do self:addToken(Token.Type.PLUS, nil) end
+        when '?' do self:addToken(Token.Type.QUESTION, nil) end
+        when ':' do self:addToken(Token.Type.COLON, nil) end
+        when ';' do self:addToken(Token.Type.SEMICOLON, nil) end
+        when '*' do self:addToken(Token.Type.STAR, nil) end
+        when '%' do self:addToken(Token.Type.MODULO, nil) end
+
+        when '!' do
+            box type <- Token.Type.BANG_EQUAL if self:match('=') else Token.Type.BANG
+            self:addToken(type)
+        end
+
+        when '=' do
+            box type <- Token.Type.EQUAL_EQUAL if self:match('=') else Token.Type.EQUAL
+            self:addToken(type)
+        end
+
+        when '>' do
+            box type <- Token.Type.GREATER_EQUAL if self:match('=') else Token.Type.GREATER
+            self:addToken(type)
+        end
+
+        when '<' do
+            if self:match('-') then
+                self:addToken(Token.Type.LEFT_ARROW, nil)
+            elseif self:match('=') then
+                self:addToken(Token.Type.LESS_EQUAL, nil)
+            else
+                self:addToken(Token.Type.LESS, nil)
+            end
+        end
+
+        when '/' do
+            if self:match('/') then
+                self:comment()
+            else
+                self:addToken(TokenType.SLASH, nil)
+            end
+        end
+
+        when ' '
+        when '\r'
+        when '\t' do
+            
+        end
+
+        when '\n' do
+            self.line <- self.line + 1
+        end
+    end
+end
+
+Lexer.addToken <- function(shared self, type, literal)
+    box lexeme <- self.source[self.start to self.current - 1]
+    box token <- Token.new(type, lexeme, literal, self.line)
+    
+    self.tokens:append(share token)
+end
+
+Lexer.advance <- function(shared self)
+    self.current <- self.current + 1
+    return self.source[self.current - 1]
+end
+
+Lexer.isAtEnd <- function(shared self)
+    return self.current >= self.source:length()
+end
+
+Lexer.peek <- function(shared self)
+    if self:isAtEnd() then return "\0" end
+    return self.source[self.current]
+end
+
+Lexer.peek_next <- function(shared self)
+    if self.current + 1 >= self.source:length() then
+        return "\0"
+    end
+
+    return self.source[self.current + 1]
 end
 
 

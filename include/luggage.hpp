@@ -29,6 +29,18 @@ enum class LibInclude : unsigned {
 };
 
 
+constexpr LibInclude operator|(LibInclude a, LibInclude b) {
+    return static_cast<LibInclude>(
+        static_cast<unsigned int>(a) | static_cast<unsigned int>(b)
+    );
+}
+
+
+constexpr bool operator&(LibInclude a, LibInclude b) {
+    return static_cast<unsigned int>(a) & static_cast<unsigned int>(b);
+}  
+
+
 struct LugError {
     InterpretResult type;
     std::string message;

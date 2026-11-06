@@ -177,8 +177,10 @@ ObjModule* VMCore::LoadModule(fs::path importerPath, fs::path modulePath) {
 
     // If it's already cached in the vm...
     ObjString* moduleName = ObjString::FromLiteral(*this, modulePath.string().c_str());
+    stack.Push(moduleName);
     Value* cached = modules.Get(moduleName);
     if (cached && cached->IsObj(ObjType::MODULE)) {
+        stack.Pop();
         return cached->AsObj<ObjModule>();
     }
 
@@ -190,7 +192,8 @@ ObjModule* VMCore::LoadModule(fs::path importerPath, fs::path modulePath) {
     ObjModule* module = compiler.Compile((*source).data(), modulePath);
     stack.Push(module);
     modules.Set(moduleName, module);
-    stack.Pop();
+    stack.Pop(); // module
+    stack.Pop(); // moduleName
 
     return module;
 }
@@ -1124,6 +1127,18 @@ void VMCore::Run() {
                 DISPATCH();
             }
 
+            if (collection.IsObj(ObjType::STRING)) {
+                if (!stack.Peek(0).IsInteger()) throw RuntimeError("string index must be an integer");
+                ObjString* string = collection.AsObj<ObjString>();
+                int index = stack.Pop().AsInteger();
+
+                stack.Pop(); // collection
+                ObjString* character = ObjString::FromSource(*this, string->CharAt(index), 1);
+                stack.Push(character);
+                
+                DISPATCH();
+            }
+
             if (collection.IsObj(ObjType::THING)) {
                 ObjThing* thing = collection.AsObj<ObjThing>();
 
@@ -1423,18 +1438,6 @@ void VM::CollectGarbage() {
 const LugError& VM::LastError() const {
     return core->lastError;
 }
-
-
-constexpr LibInclude operator|(LibInclude a, LibInclude b) {
-    return static_cast<LibInclude>(
-        static_cast<unsigned int>(a) | static_cast<unsigned int>(b)
-    );
-}
-
-
-constexpr bool operator&(LibInclude a, LibInclude b) {
-    return static_cast<unsigned int>(a) & static_cast<unsigned int>(b);
-}  
 
 
 void VM::LoadLibrary(LibInclude libraries) {

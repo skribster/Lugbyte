@@ -47,7 +47,7 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
     if (result == Luggage::InterpretResult::OK) return;
     
     const Luggage::LugError& error = vm.LastError();
-    std::cerr << error.message << std::endl;
+    std::cerr << "\033[31m" << error.message << "\033[0m" << std::endl;
 
     // Exit codes consistent with the Unix sysexits.h standard
     if (result == Luggage::InterpretResult::COMPILE_ERROR) exit(65);

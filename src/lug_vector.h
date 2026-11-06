@@ -196,14 +196,20 @@ public:
 
     void Append(const T* source, std::size_t numItems) {
         if (numItems == 0) return;
-        if (count + numItems > capacity) {
-            Reallocate(Memory::GrowCapacity(capacity));
+
+        const std::size_t required = count + numItems;
+        if (required > capacity) {
+            std::size_t newCapacity = capacity;
+            while (newCapacity < required) {
+                newCapacity = Memory::GrowCapacity(newCapacity);
+            }
+            Reallocate(newCapacity);
         }
 
         std::memcpy(data + count, source, numItems * sizeof(T));
         count += numItems;
     }
-
+    
     template<typename... Args>
     T& EmplaceBack(Args&&... args) {
         T temp(std::forward<Args>(args)...);

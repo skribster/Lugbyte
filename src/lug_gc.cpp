@@ -138,7 +138,7 @@ void GC::BlackenObject(Obj* obj) {
 
 void GC::FreeObject(Obj* obj) {
 #if LUG_DEBUG_LOG_GC
-    std::printf("%p free ", static_cast<void*>(obj));
+    std::printf("%p free '%s' ", static_cast<void*>(obj), Obj::StringType(obj->type));
     Value::Print(obj);
     std::printf("\n");
 #endif

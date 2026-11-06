@@ -134,7 +134,7 @@ end
 
 box testList2 <- ["a", "b", "c", "d", "e"]
 
-// runtime error: expected a shared argument at argument 1
+// runtime error: expected a shared argument at 3argument 1
 popList(testList2)
 
 popList(share testList2)
@@ -144,6 +144,37 @@ print(testList2)  // ["a", "b", "c", "d"]
 box a <- share 5
 // is conceptually same as
 box a <- 5
+
+// --- Categories ------------------
+
+box Color <- category
+    RED,
+    ORANGE,
+    YELLOW,
+    GREEN,
+    BLUE,
+    PURPLE
+end
+
+box color <- Color.RED
+
+// expect: "warm color"
+inspect color
+    when Color.RED
+    when Color.ORANGE
+    when Color.YELLOW do
+        print("warm color")
+    end
+
+    when Color.BLUE
+    when Color.PURPLE do
+        print("cool color")
+    end
+
+    else 
+        print("what are you?")
+    end
+end
 
 // --- Things ----------------------
 box Dog <- thing // Create a new thing and stuff it inside the container Dog

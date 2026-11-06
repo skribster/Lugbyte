@@ -79,7 +79,6 @@ static inline int ClampIndex(int index, int numItems) {
 
 static inline int ClampIndexWithBounds(int index, int numItems) {
     if (numItems == 0 || index >= numItems) return -1;
-    
     return ClampIndex(index, numItems);
 }
 
@@ -301,6 +300,14 @@ ObjString* ObjString::Concatenate(ObjString* other) {
     ObjString* result = ObjString::FromAllocated(vm, combinedChars, totalLength);
 
     return result;
+}
+
+
+const char* ObjString::CharAt(int index) {
+    int clampedIndex = ClampIndexWithBounds(index, length);
+    if (clampedIndex == -1) throw vm.RuntimeError("string index '%d' out of range", index);
+
+    return characters + clampedIndex;
 }
 
 

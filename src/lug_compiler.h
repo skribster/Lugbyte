@@ -74,6 +74,7 @@ private:
 enum class Precedence {
     NONE,
     ASSIGNMENT,  // =
+    TERNARY,     // ... if ... else ...
     OR,          // or
     AND,         // and
     EQUALITY,    // == !=
@@ -210,6 +211,7 @@ private:
     void Binary(bool canAssign);
     void And(bool canAssign);
     void Or(bool canAssign);
+    void Ternary(bool canAssign);
     void Number(bool canAssign);
     void String(bool canAssign);
     void Literal(bool canAssign);

@@ -1168,7 +1168,7 @@ const ParseRule Compiler::rules[] = {
     { &Compiler::Function,      nullptr,                Precedence::NONE },             // FUNCTION
     { nullptr,                  nullptr,                Precedence::NONE },             // FOREACH
     { nullptr,                  nullptr,                Precedence::NONE },             // FROM
-    { nullptr,                  nullptr,                Precedence::NONE },             // IF
+    { nullptr,                  &Compiler::Ternary,     Precedence::TERNARY },          // IF
     { nullptr,                  nullptr,                Precedence::NONE },             // IN
     { nullptr,                  nullptr,                Precedence::NONE },             // INSPECT
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
@@ -1544,6 +1544,39 @@ void Compiler::Or(bool canAssign) {
 
 
 /**
+ * Parses a ternary statement
+ */
+void Compiler::Ternary(bool canAssign) {
+    // <then-expression> if <condition> else <else-expression>
+    ParsePrecedence(Precedence::OR); // Condition
+
+    std::size_t skipElse = EmitJump(OpCode::POP_JUMP_IF_TRUE); // Pop the condition value
+    EmitByte(OpCode::POP); // Pop the then-expression value
+
+    parser.Consume(TokenType::ELSE, "expected 'else' after ternary condition");
+    ParsePrecedence(Precedence::TERNARY);
+
+    PatchJump(skipElse);
+}
+
+
+/**
+ * Emits a literal (true, false, nil)
+ */
+void Compiler::Literal(bool canAssign) {
+    TokenType literalType = parser.previous.type;
+
+    switch (literalType) {
+        case TokenType::TRUE: EmitByte(OpCode::TRUE); break;
+        case TokenType::FALSE: EmitByte(OpCode::FALSE); break;
+        case TokenType::NIL: EmitByte(OpCode::NIL); break;
+        
+        default: UNREACHABLE();
+    }
+}
+
+
+/**
  * Emits a number into the bytecode stream.
  */
 void Compiler::Number(bool canAssign) {
@@ -1594,22 +1627,6 @@ void Compiler::String(bool canAssign) {
     );
 
     EmitConstant(stringObject);
-}
-
-
-/**
- * Emits a literal (true, false, nil)
- */
-void Compiler::Literal(bool canAssign) {
-    TokenType literalType = parser.previous.type;
-
-    switch (literalType) {
-        case TokenType::TRUE: EmitByte(OpCode::TRUE); break;
-        case TokenType::FALSE: EmitByte(OpCode::FALSE); break;
-        case TokenType::NIL: EmitByte(OpCode::NIL); break;
-        
-        default: UNREACHABLE();
-    }
 }
 
 

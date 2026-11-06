@@ -32,6 +32,8 @@ void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
         return;
     }
 
+    vm.stack.Push(library);
+
     for (const NativeEntry& entry : entries) {
         ObjString* entryName = ObjString::FromSource(vm, entry.name, std::strlen(entry.name));
         vm.stack.Push(entryName);
@@ -43,6 +45,8 @@ void DefineLib(VMCore& vm, ObjThing* library, const NativeEntry (&entries)[N]) {
         vm.stack.Pop();
         vm.stack.Pop();
     }
+
+    vm.stack.Pop(); // Library
 }
 
 // Library open functions -------------------------

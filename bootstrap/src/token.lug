@@ -18,7 +18,7 @@ Token.Type <- category
     COLON,
     SLASH,
     STAR,
-    PERCENT,
+    MODULO,
 
 	// One-or-two character tokens
     EQUAL,
@@ -71,18 +71,18 @@ Token.Type <- category
     EOF
 end
 
-Token.new <- function(type, lexeme, literal, line)
+Token.new <- function(_type, _lexeme, _literal, _line)
     return thing of Token {
-        type    <- type,
-        lexeme  <- lexeme,
-        literal <- literal,
-        line    <- line
+        type    <- _type,
+        lexeme  <- _lexeme,
+        literal <- _literal,
+        line    <- _line
     }
 end
 
 
 Token.__tostring__ <- function(shared self)
-    return "<Token " + type + " '" + lexeme + "' " + string(line) + ">" 
+    return "<Token " + string(self.type) + " '" + self.lexeme + "' " + string(self.line) + ">" 
 end
 
 
