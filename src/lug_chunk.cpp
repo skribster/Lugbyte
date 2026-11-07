@@ -74,7 +74,6 @@ void Chunk::WriteConstant(Value value, std::size_t line) {
 std::size_t Chunk::AddConstant(Value value) {
     // So the GC doesn't collect when we add it to the vector
     vm.stack.Push(value); 
-
     constants.PushBack(value);
     vm.stack.Pop();
 

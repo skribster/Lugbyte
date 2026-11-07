@@ -46,7 +46,6 @@
 // as soon as it finishes compiling.
 #define LUG_DEBUG_PRINT_CODE false
 
-
 #ifndef NDEBUG
     #include <cstdio>
 

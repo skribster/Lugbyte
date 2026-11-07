@@ -52,6 +52,40 @@ static Value Length(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 
+static Value IsAlpha(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+    CheckType(vm, args[0], ObjType::STRING);
+
+    ObjString* string = args[0].AsObj<ObjString>();
+
+    for (int i = 0; i < string->length; i++) {
+        char c = string->characters[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+static Value IsDigit(VMCore& vm, Value* args, std::size_t argCount) {
+    CheckArgc(vm, argCount, 1);
+    CheckType(vm, args[0], ObjType::STRING);
+
+    ObjString* string = args[0].AsObj<ObjString>();
+
+    for (int i = 0; i < string->length; i++) {
+        char c = string->characters[i];
+        if (!(c >= '0' && c <= '9')) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 static Value __Call__(VMCore& vm, Value* args, std::size_t argCount) {
     CheckArgc(vm, argCount, 1);
     return args[0].ToString(vm);
@@ -64,6 +98,8 @@ static constexpr NativeEntry stringLib[] = {
     { "upper",      &Upper },
     { "lower",      &Lower },
     { "length",     &Length },
+    { "isalpha",    &IsAlpha },
+    { "isdigit",    &IsDigit },
     { "__call__",   &__Call__ }
 };
 

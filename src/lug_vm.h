@@ -30,10 +30,10 @@ struct Stack {
     Value stack[STACK_MAX];
     Value* top{ nullptr };
 
-    inline void AddFrame(ObjClosure* closure, Value* slots) {
+    inline void AddFrame(ObjClosure* closure, Value* slots, int offset = 0) {
         CallFrame& newFrame = frames[frameCount++];
         newFrame.closure = closure;
-        newFrame.ip = closure->function->chunk.bytecode.Data();
+        newFrame.ip = closure->function->chunk.bytecode.Data() + offset;
         newFrame.slots = slots;
     }
 

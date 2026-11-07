@@ -216,6 +216,9 @@ ObjString* ObjString::FromLiteral(VMCore& vm, const char* literal) {
  * Instead of copying the characters/allocating them to a new
  * block of memory on the heap like in ObjString::FromSource, this function
  * claims ownership of the string you give it.
+ * 
+ * This function expects that you pass in the characters, and then its length
+ * WITHOUT the null terminator at the end.
  */
 ObjString* ObjString::FromAllocated(VMCore& vm, char* chars, std::size_t length) {
     std::uint32_t hash = HashString(chars, length);
@@ -250,6 +253,22 @@ ObjString* ObjString::FromFormat(VMCore& vm, const char* format, ...) {
     va_end(copy);
 
     return FromAllocated(vm, formatted, sizeNeeded);
+}
+
+/**
+ * Creates an ObjString from a vector char buffer. This function
+ * handles adding the null terminator at the end for you.
+ */
+ObjString* ObjString::FromBuffer(VMCore& vm, Vector<char>& buffer) {
+    buffer.PushBack('\0');
+    buffer.ShrinkToFit();
+
+    std::size_t outCapacity, outCount;
+    char* data = buffer.TakeOwnership(outCapacity, outCount);
+
+    // FromAllocated expects the length of the string 
+    // WITHOUT the null terminator
+    return FromAllocated(vm, data, outCount - 1); 
 }
 
 
@@ -340,6 +359,11 @@ void ObjFunction::Print() {
 void ObjFunction::Blacken(GC& gc) {
     gc.MarkObject(name);                            
     gc.MarkVector(chunk.constants);
+}
+
+
+void ObjFunction::MarkDefault() {
+    defaults.PushBack(chunk.bytecode.Count());
 }
 
 

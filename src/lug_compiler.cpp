@@ -321,7 +321,6 @@ ObjFunction* Compiler::PopUnit() {
 
 
 // Bytecode methods -----------------------------------
-
 /**
  * Emits a byte into the current chunk's bytecode array
  */
@@ -390,7 +389,6 @@ void Compiler::EmitShortable(OpCode::Type op, std::uint16_t index) {
     }
 }
 
-
 /**
  * Adds the value in the constant pool and
  * returns the index of the constant.
@@ -419,6 +417,7 @@ std::uint16_t Compiler::IdentifierConstant(Token& identifier) {
     ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
     return MakeConstant(string);
 }
+
 
 void Compiler::EmitIdentifier(Token& identifier) {
     ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
@@ -1153,7 +1152,7 @@ const ParseRule Compiler::rules[] = {
 
     // Keywords         
     { nullptr,                  &Compiler::And,         Precedence::AND },              // AND
-    { nullptr,                  nullptr,                Precedence::AND },              // AT
+    { nullptr,                  nullptr,                Precedence::NONE },             // AT
     { nullptr,                  nullptr,                Precedence::NONE },             // BOX
     { nullptr,                  nullptr,                Precedence::NONE },             // BREAK
     { nullptr,                  nullptr,                Precedence::NONE },             // BY
@@ -1168,7 +1167,7 @@ const ParseRule Compiler::rules[] = {
     { &Compiler::Function,      nullptr,                Precedence::NONE },             // FUNCTION
     { nullptr,                  nullptr,                Precedence::NONE },             // FOREACH
     { nullptr,                  nullptr,                Precedence::NONE },             // FROM
-    { nullptr,                  &Compiler::Ternary,     Precedence::TERNARY },          // IF
+    { &Compiler::Ternary,       nullptr,                Precedence::NONE },             // IF
     { nullptr,                  nullptr,                Precedence::NONE },             // IN
     { nullptr,                  nullptr,                Precedence::NONE },             // INSPECT
     { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
@@ -1298,6 +1297,8 @@ void Compiler::Call(bool canAssign) {
  * Returns an Arguments struct containing info about the arguments.
  */
 ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
+    // Ideally we don't want to have to pass in the VM here
+    // since the arguments are just data, but we have to  
     ObjFunction::Arguments arguments;
 
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
@@ -1312,13 +1313,14 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
                 arguments.MarkShared(arguments.arity);
             }
 
-            StoredExpression();
+            StoredExpression(); 
             
-            if (arguments.arity == 255) {
-                parser.Error("can't have more than 255 arguments");
+            if (arguments.arity == argcMax) {
+                parser.Error("can't have more than '%zu' arguments", argcMax);
             }
 
             arguments.arity++;
+
         } while (parser.Match(TokenType::COMMA));
     }   
 
@@ -1385,20 +1387,15 @@ void Compiler::Dot(bool canAssign) {
         parser.Consume(TokenType::LEFT_PAREN, "expected function call after colon-accessed attribute");
 
         EmitShortable(OpCode::SELF, nameConstant);
-        ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT - 1);
+        ObjFunction::Arguments arguments = ArgumentList(ObjFunction::Arguments::MAX_ARITY - 1);
 
+        // The first argument is always shared in a self call.
+        arguments.MarkShared(0);
+        
         // ArgumentList() parsed all the arguments AFTER the self argument,
         // so we have to add +1 to account for that.
-        EmitBytes(OpCode::CALL_SHARED, arguments.arity + 1);
-
-        /*  
-            The first argument is always shared in a self call.
-            We will add a leading '1' to the argument bitmask.
-            e.g.
-            101100 -> 1011001
-            (shift left one bit, then BITWISE OR by 1)
-        */
-        arguments.shared = (arguments.shared << 1) | 1;
+        arguments.arity++;
+        EmitBytes(OpCode::CALL_SHARED, arguments.arity);
         EmitByte(arguments.shared);
 
         isValidExprStmt = true;
@@ -1547,13 +1544,19 @@ void Compiler::Or(bool canAssign) {
  * Parses a ternary statement
  */
 void Compiler::Ternary(bool canAssign) {
-    // <then-expression> if <condition> else <else-expression>
-    ParsePrecedence(Precedence::OR); // Condition
+    // <condition> ? <then-expression> : <else-expression>
+    //               ^^^^^^^^^^^^^^^^^ You are here.
+    Expression(); // condition
+    parser.Consume(TokenType::THEN, "expected 'then' after condition.");
+    std::size_t skipThen = EmitJump(OpCode::POP_JUMP_IF_FALSE); // Pop the condition value
+    
+    // then-expression
+    Expression();
+    std::size_t skipElse = EmitJump(OpCode::JUMP);
 
-    std::size_t skipElse = EmitJump(OpCode::POP_JUMP_IF_TRUE); // Pop the condition value
-    EmitByte(OpCode::POP); // Pop the then-expression value
-
-    parser.Consume(TokenType::ELSE, "expected 'else' after ternary condition");
+    // else-expression
+    PatchJump(skipThen);
+    parser.Consume(TokenType::ELSE, "expected 'else' after then-branch.");
     ParsePrecedence(Precedence::TERNARY);
 
     PatchJump(skipElse);
@@ -1591,8 +1594,9 @@ void Compiler::Number(bool canAssign) {
 void Compiler::String(bool canAssign) {
     Vector<char> buffer(vm);
     Token& string = parser.previous;
+    std::size_t stringLength = string.length - 2; // to account for surrounding quotes
 
-    for (int i = 1; i < string.length - 1; i++) {
+    for (int i = 1; i <= stringLength; i++) {
         char character = string.start[i];
         if (character != '\\') {
             buffer.PushBack(character);  
@@ -1600,7 +1604,7 @@ void Compiler::String(bool canAssign) {
         }
         
         // Escape sequence handling ----------------
-        if (i + 1 >= string.length) break;
+        if (i + 1 > stringLength) break;
         i++; // Consume the backslash
         char nextCharacter = string.start[i];
         switch (nextCharacter) {
@@ -1620,12 +1624,7 @@ void Compiler::String(bool canAssign) {
         }
     }
 
-    ObjString* stringObject = ObjString::FromSource(
-        vm,
-        buffer.Data(),
-        buffer.Count()
-    );
-
+    ObjString* stringObject = ObjString::FromBuffer(vm, buffer);
     EmitConstant(stringObject);
 }
 
@@ -1641,11 +1640,12 @@ void Compiler::Function(bool canAssign) {
     parser.Consume(TokenType::LEFT_PAREN, "expected '(' after 'function'");
     
     // Parse arguments
+    
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
-        do {
-            ObjFunction* currentFunction = currentUnit->function;
-            ObjFunction::Arguments& parameters = currentFunction->parameters;
+        ObjFunction* currentFunction = currentUnit->function;
+        ObjFunction::Arguments& parameters = currentFunction->parameters;
 
+        do {
             parameters.arity++;
             if (parameters.arity > UINT8_MAX) {
                 parser.ErrorAtCurrent("can't have more than 255 parameters");
@@ -1653,7 +1653,7 @@ void Compiler::Function(bool canAssign) {
 
             if (parser.Match(TokenType::SHARED)) {
                 if (parameters.arity > 8) {
-                    parser.ErrorAtCurrent("can't define any moreshared parameters after the 8th parameter");
+                    parser.ErrorAtCurrent("can't define any more shared parameters after the 8th parameter");
                 }
 
                 /*
@@ -1670,7 +1670,47 @@ void Compiler::Function(bool canAssign) {
 
             std::uint8_t constant = ParseVariable("expected parameter name");
             DefineVariable(constant);
+
+            /*
+                Default arguments are handled by compiling the default
+                expressions inside the function's chunk. Each function chunk
+                has a little prebody where it pushes the expressions on the
+                stack. Those expressions on the stack are the arguments that
+                the function will use.
+
+                Then during runtime, the VM will select where to start on the
+                function depending on its arg count + default count.
+
+                The function chunk code for a function like...
+
+                box test <- function(a <- 1, b <- 2)
+
+                end
+                
+                may look like...
+
+                == test ==
+                0000    2 OP_CONSTANT             0 '1'
+                0002    | OP_CONSTANT             1 '2'
+                ...
+
+                where if the user omitted B, the VM will start
+                the function at 0002. If the user omitted both,
+                the VM will start the function at 0000. 
+            */
+            if (parser.Match(TokenType::LEFT_ARROW)) {
+                currentFunction->MarkDefault();
+                Expression();
+
+            } else if (currentFunction->defaults.Count() > 0) {
+                parser.ErrorAtCurrent("can't define a non-default parameter after a default parameter");
+            } else {
+                parameters.minArity++;
+            }
+
         } while (parser.Match(TokenType::COMMA));
+
+        currentFunction->MarkDefault();
     }
 
     parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after parameters");
@@ -1893,6 +1933,7 @@ void Compiler::ParsePrecedence(Precedence minimumPrecedence) {
     while (GetRule(parser.current.type).precedence >= minimumPrecedence) {
         parser.Advance();
         ParseFn infixRule = GetRule(parser.previous.type).infix;
+        ASSERT(infixRule != nullptr, "infix rule is not defined");
         (this->*infixRule)(canAssign);
     }
 

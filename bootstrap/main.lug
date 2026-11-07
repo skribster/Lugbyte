@@ -1,5 +1,5 @@
 box Lexer <- unbox("src/lexer")
-// box newLexer <- Lexer.new("(())\n[[]]\n,.      +-?:;*%")
+box newLexer <- Lexer.new("3.5 + 2.6 / 1.2 // comment\n hello ")
 box tokens <- newLexer:scanTokens()
 
 print(tokens:join("\n"))

@@ -153,7 +153,7 @@ private:
     void EmitReturn();
     void EmitConstant(Value value);
     void EmitShortable(OpCode::Type op, std::uint16_t constant);
-    
+
     std::uint16_t MakeConstant(Value value);
     std::uint16_t IdentifierConstant(Token& identifier);
     void EmitIdentifier(Token& identifier);

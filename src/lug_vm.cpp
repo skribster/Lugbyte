@@ -272,8 +272,27 @@ void VMCore::MarkRoots() {
 
 void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
     const ObjFunction::Arguments& parameters = closure->function->parameters;
-    if (argCount != parameters.arity) {
-        throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
+    if (argCount > parameters.arity || argCount < parameters.minArity) {
+        if (parameters.arity == parameters.minArity) {
+            throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
+        } else {
+            throw RuntimeError("expected %d to %d arguments but got %d", parameters.minArity, parameters.arity, argCount);
+        }
+    }
+    
+    // Handle default args...
+    int argDifference = parameters.arity - argCount;
+    const auto& defaults = closure->function->defaults;
+    int startOffset = 0;
+
+    // We have to determine the start offset depending on our arg count.
+    if (defaults.Count() > 0) {
+        ASSERT(
+            defaults.Count() == parameters.arity - parameters.minArity + 1, 
+            "Default count mismatched"
+        );
+
+        startOffset = defaults[defaults.Count() - argDifference - 1];
     }
 
     // If the 'shared' parameters don't align...
@@ -287,7 +306,8 @@ void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t 
         throw RuntimeError("stack overflow");
     }
 
-    stack.AddFrame(closure, stack.top - argCount - 1);
+    Value* slots = stack.top - parameters.arity + argDifference - 1;
+    stack.AddFrame(closure, slots, startOffset);
 }
 
 
@@ -409,6 +429,25 @@ void VMCore::Run() {
         }                                                   \
         stack.Push(a.AsNumber() op b.AsNumber());           \
     } while (false)
+
+
+    #define COMPARISON_OP(op)                                                           \
+    do {                                                                                \
+        Value b = stack.Pop();                                                          \
+        Value a = stack.Pop();                                                          \
+                                                                                        \
+        if (b.IsNumber() && a.IsNumber()) {                                             \
+            stack.Push(a.AsNumber() op b.AsNumber());                                   \
+        }                                                                               \
+                                                                                        \
+        else if (b.IsObj(ObjType::STRING) && a.IsObj(ObjType::STRING)) {                \
+            stack.Push(*a.AsObj<ObjString>() op *b.AsObj<ObjString>());                 \
+        }                                                                               \
+                                                                                        \
+        else {                                                                          \
+            throw RuntimeError("operands must be two numbers or two strings");          \
+        }                                                                               \
+    } while (false)                                                                     \
 
 
     // Dispatch table shenanigans -------------------
@@ -573,22 +612,22 @@ void VMCore::Run() {
         }
 
         CASE(GREATER): {
-            BINARY_OP(>);
+            COMPARISON_OP(>);
             DISPATCH();
         }
         
         CASE(GREATER_EQUAL): {
-            BINARY_OP(>=);
+            COMPARISON_OP(>=);
             DISPATCH();
         }
         
         CASE(LESS): {
-            BINARY_OP(<);
+            COMPARISON_OP(<);
             DISPATCH();
         }
         
         CASE(LESS_EQUAL): {
-            BINARY_OP(<=);
+            COMPARISON_OP(<=);
             DISPATCH();
         }
 
@@ -863,11 +902,7 @@ void VMCore::Run() {
                 Value copy = value.AsObj()->Copy();
                 stack.Pop();
                 stack.Push(copy);
-            } else {
-            #if LUG_DEBUG_PRINT_CODE
-                std::printf("          (unchanged)\n");
-            #endif
-            }
+            };
 
 
             DISPATCH();
@@ -1274,11 +1309,7 @@ void VMCore::Run() {
 
             if (object.IsObj(ObjType::THING)) {
                 ObjThing* thing = object.AsObj<ObjThing>();
-                if (value.IsNil()) {
-                    thing->Delete(attributeName);
-                } else {
-                    thing->Set(attributeName, value);
-                }
+                thing->Set(attributeName, value);
 
                 stack.Pop();
                 stack.Pop();
@@ -1355,7 +1386,6 @@ void VMCore::Run() {
 
             throw RuntimeError("value of type '%s' is not sliceable", object.StringType());
         }
-
 
         CASE(RETURN): {
             Value result = stack.Pop();

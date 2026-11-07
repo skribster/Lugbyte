@@ -65,9 +65,30 @@ struct ObjString : Obj {
     static ObjString* FromLiteral(VMCore& vm, const char* literal);
     static ObjString* FromAllocated(VMCore& vm, char* chars, std::size_t length);
     static ObjString* FromFormat(VMCore& vm, const char* format, ...);
+    static ObjString* FromBuffer(VMCore& vm, Vector<char>& buffer);
 
     char* characters{ nullptr };
     std::size_t length{ 0 };
+
+    inline bool operator>(const ObjString& other) {
+        return std::strcmp(characters, other.characters) > 0 ? true : false;
+    }
+
+    inline bool operator<(const ObjString& other) {
+        return std::strcmp(characters, other.characters) < 0 ? true : false;
+    }
+
+    inline bool operator>=(const ObjString& other) {
+        return std::strcmp(characters, other.characters) >= 0 ? true : false;
+    }
+    
+    inline bool operator<=(const ObjString& other) {
+        return std::strcmp(characters, other.characters) <= 0 ? true : false;
+    }
+
+    inline char operator[](std::size_t index) {
+        return characters[index];
+    } 
 };
 
 
@@ -83,6 +104,7 @@ struct ObjFunction : Obj {
         static constexpr std::size_t MAX_ARITY{ UINT8_MAX };
 
         std::uint8_t arity{ 0 };
+        std::uint8_t minArity{ 0 };
         std::uint8_t shared{ 0 };
 
         inline void MarkShared(std::size_t argIndex) {
@@ -90,17 +112,25 @@ struct ObjFunction : Obj {
         }
     };
 
-    explicit ObjFunction(VMCore& vm) : Obj(vm, ObjType::FUNCTION), chunk(vm) {}
+    explicit ObjFunction(VMCore& vm) 
+        : Obj(vm, ObjType::FUNCTION)
+        , chunk(vm)
+        , defaults(vm)
+    {}
+
     ~ObjFunction() override;
     void Print() override;
     void Blacken(GC& gc) override;
     
     static ObjFunction* New(VMCore& vm);
+    void MarkDefault();
 
-    Arguments parameters;
-    std::size_t upvalueCount{ 0 };
-    ObjString* name{ nullptr };
     Chunk chunk;
+    Arguments parameters;
+    ObjString* name{ nullptr };
+
+    Vector<std::size_t> defaults;
+    std::size_t upvalueCount{ 0 };
 };
 
 // ObjModule -----------------

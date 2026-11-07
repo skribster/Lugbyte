@@ -82,7 +82,7 @@ end
 
 
 Token.__tostring__ <- function(shared self)
-    return "<Token " + string(self.type) + " '" + self.lexeme + "' " + string(self.line) + ">" 
+    return "<Token " + string(self.type) + " '" + self.lexeme + "' " + string(self.literal) + " " + string(self.line) + ">" 
 end
 
 

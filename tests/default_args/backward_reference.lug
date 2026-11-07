@@ -1,0 +1,5 @@
+box test <- function(a, b <- a + 1, c <- b + 1, d <- c + 1) 
+    print(a, b, c, d)
+end
+
+test(1)             // expect: 1 2 3 4

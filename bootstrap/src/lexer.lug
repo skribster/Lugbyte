@@ -1,7 +1,18 @@
 // Variables --------------------------
 box Token <- unbox("token")
 
+// Helper -----------------------------
+
+box KEYWORDS <- {
+    
+}
+
+box isAlnum <- function(character)
+    return character:isalpha() or character:isdigit()
+end
+
 // Module -----------------------------
+
 box Lexer <- thing
 
 Lexer.new <- function(source)
@@ -28,44 +39,44 @@ end
 Lexer.scanToken <- function(shared self)
     box character <- self:advance()
     inspect character
-        when '(' do self:addToken(Token.Type.LEFT_PAREN, nil) end
-        when ')' do self:addToken(Token.Type.RIGHT_PAREN, nil) end
-        when '{' do self:addToken(Token.Type.LEFT_BRACE, nil) end
-        when '}' do self:addToken(Token.Type.RIGHT_BRACE, nil) end
-        when '[' do self:addToken(Token.Type.LEFT_BRACKET, nil) end
-        when ']' do self:addToken(Token.Type.RIGHT_BRACKET, nil) end
-        when ',' do self:addToken(Token.Type.COMMA, nil) end
-        when '.' do self:addToken(Token.Type.DOT, nil) end
-        when '-' do self:addToken(Token.Type.MINUS, nil) end
-        when '+' do self:addToken(Token.Type.PLUS, nil) end
-        when '?' do self:addToken(Token.Type.QUESTION, nil) end
-        when ':' do self:addToken(Token.Type.COLON, nil) end
-        when ';' do self:addToken(Token.Type.SEMICOLON, nil) end
-        when '*' do self:addToken(Token.Type.STAR, nil) end
-        when '%' do self:addToken(Token.Type.MODULO, nil) end
+        when '(' do self:addToken(Token.Type.LEFT_PAREN) end
+        when ')' do self:addToken(Token.Type.RIGHT_PAREN) end
+        when '{' do self:addToken(Token.Type.LEFT_BRACE) end
+        when '}' do self:addToken(Token.Type.RIGHT_BRACE) end
+        when '[' do self:addToken(Token.Type.LEFT_BRACKET) end
+        when ']' do self:addToken(Token.Type.RIGHT_BRACKET) end
+        when ',' do self:addToken(Token.Type.COMMA) end
+        when '.' do self:addToken(Token.Type.DOT) end
+        when '-' do self:addToken(Token.Type.MINUS) end
+        when '+' do self:addToken(Token.Type.PLUS) end
+        when '?' do self:addToken(Token.Type.QUESTION) end
+        when ':' do self:addToken(Token.Type.COLON) end
+        when ';' do self:addToken(Token.Type.SEMICOLON) end
+        when '*' do self:addToken(Token.Type.STAR) end
+        when '%' do self:addToken(Token.Type.MODULO) end
 
         when '!' do
-            box type <- Token.Type.BANG_EQUAL if self:match('=') else Token.Type.BANG
+            box type <- if self:match('=') then Token.Type.BANG_EQUAL else Token.Type.BANG
             self:addToken(type)
         end
 
         when '=' do
-            box type <- Token.Type.EQUAL_EQUAL if self:match('=') else Token.Type.EQUAL
+            box type <- if self:match('=') then Token.Type.EQUAL_EQUAL else Token.Type.EQUAL
             self:addToken(type)
         end
 
         when '>' do
-            box type <- Token.Type.GREATER_EQUAL if self:match('=') else Token.Type.GREATER
+            box type <- if self:match('=') then Token.Type.GREATER_EQUAL else Token.Type.GREATER
             self:addToken(type)
         end
 
         when '<' do
             if self:match('-') then
-                self:addToken(Token.Type.LEFT_ARROW, nil)
+                self:addToken(Token.Type.LEFT_ARROW)
             elseif self:match('=') then
-                self:addToken(Token.Type.LESS_EQUAL, nil)
+                self:addToken(Token.Type.LESS_EQUAL)
             else
-                self:addToken(Token.Type.LESS, nil)
+                self:addToken(Token.Type.LESS)
             end
         end
 
@@ -73,7 +84,7 @@ Lexer.scanToken <- function(shared self)
             if self:match('/') then
                 self:comment()
             else
-                self:addToken(TokenType.SLASH, nil)
+                self:addToken(Token.Type.SLASH)
             end
         end
 
@@ -86,10 +97,62 @@ Lexer.scanToken <- function(shared self)
         when '\n' do
             self.line <- self.line + 1
         end
+
+        when '"' do 
+            
+        end
+
+        else
+            if character:isdigit() then
+                self:number()
+            elseif character:isalpha() then
+                self:identifier()
+            else 
+                error("unexpected character: " + character)
+            end
+        end
     end
 end
 
-Lexer.addToken <- function(shared self, type, literal)
+
+Lexer.number <- function(shared self)
+    while self:peek():isdigit() do
+        self:advance()
+    end
+
+    if self:peek() = '.' and self:peekNext():isdigit() then
+        self:advance()
+
+        while self:peek():isdigit() do
+            self:advance()
+        end
+    end
+
+    box numLiteral <- number(self.source[self.start to self.current])
+    self:addToken(Token.Type.NUMBER, numLiteral)
+end
+
+
+Lexer.identifier <- function(shared self)
+    while isAlnum(self:peek()) and not self:isAtEnd() do
+        self:advance()
+    end
+    
+    box lexeme <- self.source[self.start to self.current - 1]
+    box type <- KEYWORDS:get(lexeme)
+    if type = nil then type <- Token.Type.IDENTIFIER end
+    self:addToken(type, lexeme)
+end
+
+
+Lexer.comment <- function(shared self)
+    while self:peek() != '\n' and not self:isAtEnd() do
+        self:advance()
+    end
+end
+
+
+Lexer.addToken <- function(shared self, type, literal <- nil)
     box lexeme <- self.source[self.start to self.current - 1]
     box token <- Token.new(type, lexeme, literal, self.line)
     
@@ -102,7 +165,7 @@ Lexer.advance <- function(shared self)
 end
 
 Lexer.isAtEnd <- function(shared self)
-    return self.current >= self.source:length()
+    return self.current >= self.source:length() - 1
 end
 
 Lexer.peek <- function(shared self)
@@ -110,12 +173,21 @@ Lexer.peek <- function(shared self)
     return self.source[self.current]
 end
 
-Lexer.peek_next <- function(shared self)
+Lexer.peekNext <- function(shared self)
     if self.current + 1 >= self.source:length() then
         return "\0"
     end
 
     return self.source[self.current + 1]
+end
+
+Lexer.match <- function(shared self, expected)
+    if self:isAtEnd() then return false end
+    if self:peek() != expected then return false end
+    
+    self:advance()
+
+    return true
 end
 
 

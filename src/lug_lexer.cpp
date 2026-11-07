@@ -307,6 +307,7 @@ Token Lexer::ScanToken() {
             return MakeToken(TokenType::DOT);
         case '-': return MakeToken(TokenType::MINUS);
         case '+': return MakeToken(TokenType::PLUS);
+        case '?': return MakeToken(TokenType::QUESTION);
         case '/': return MakeToken(TokenType::SLASH);
         case '*': return MakeToken(TokenType::STAR);
         case '=': return MakeToken(TokenType::EQUAL);

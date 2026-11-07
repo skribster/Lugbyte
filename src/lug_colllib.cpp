@@ -205,12 +205,7 @@ static Value Join(VMCore& vm, Value* args, std::size_t argCount) {
         vm.stack.Pop();
     }
 
-    joinBuffer.EmplaceBack('\0');
-    joinBuffer.ShrinkToFit();
-
-    std::size_t outCapacity, outCount;
-    char* data = joinBuffer.TakeOwnership(outCapacity, outCount);
-    return ObjString::FromAllocated(vm, data, outCount - 1);
+    return ObjString::FromBuffer(vm, joinBuffer);
 }
 
 }
