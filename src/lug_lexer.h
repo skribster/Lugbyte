@@ -83,6 +83,7 @@ struct Token {
     const char* start{ nullptr };
     std::size_t length{ 0 };
     std::size_t line{ 0 };
+    std::size_t column{ 0 };
 
     bool operator==(const Token& other) const;
 
@@ -92,13 +93,18 @@ struct Token {
 
 class Lexer {
 public:
-    inline void Reset(const char* source) {
-        start = source;
-        current = source;
+    inline void Reset(const char* src) {
+        source = src;
+        start = src;
+        current = src;
+        
+        lineStart = src;
         line = 1;
     }
 
     Token ScanToken();
+    std::string LineContents(std::size_t lineNumber) const;
+    
     
 private:
     Token ErrorToken(const char* message);
@@ -107,7 +113,7 @@ private:
     Token Identifier();
     Token Number();
     Token String(char delimiter);
-
+    
     bool IsAtEnd();
     void SkipWhitespace();
     char Advance();
@@ -115,9 +121,12 @@ private:
     char PeekNext();
     bool Match(char expected);
 
+    const char* source{ nullptr };
     const char* start{ nullptr };
     const char* current{ nullptr };
+    
     std::size_t line{ 1 };
+    const char* lineStart{ nullptr };
 };
 
 

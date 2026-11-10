@@ -1,1 +1,5 @@
-tests:2: error at ')': can't define a non-default parameter after a default parameter
+error at 'c': can't define a non-default parameter after a default parameter
+ --> tests:2:38
+  |
+2 | box test <- function(a <- 1, b <- 2, c)
+  |                                      ^

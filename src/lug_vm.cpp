@@ -121,13 +121,13 @@ std::string VMCore::StackTraceback() {
         ObjModule* module = frame.closure->module;
         ObjFunction* function = frame.closure->function;
         std::size_t instruction = frame.ip - function->chunk.bytecode.Data() - 1;
-        std::size_t line = function->chunk.GetLine(instruction);
+        SourcePosition sourcePosition = function->chunk.GetSourcePosition(instruction);;
 
         fs::path path{ module->path->characters };
         traceback += "    ";
         traceback += path.filename().string();
-        traceback += ":";
-        traceback += std::to_string(line);
+        traceback += ":" + std::to_string(sourcePosition.line);
+        traceback += ":" + std::to_string(sourcePosition.column);
         traceback += ": in ";
 
         if (function->name != nullptr) {
@@ -295,8 +295,12 @@ void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t 
         startOffset = defaults[defaults.Count() - argDifference - 1];
     }
 
-    // If the 'shared' parameters don't align...
-    std::uint8_t masked = parameters.shared & ~shared;
+    // If the 'shared' parameters don't align, we error.
+    // The argCountMask is to make sure that this only checks for
+    // the arguments we passed IN. If we had a shared default argument
+    // and we don't supply it in the call site, we don't want to error.
+    std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << argCount) - 1;
+    std::uint8_t masked = parameters.shared & ~shared & argCountMask;
     if ((masked) != 0) {
         int index = CountTrailingZeroes(masked);
         throw RuntimeError("expected a shared argument at argument %d", index + 1);

@@ -15,18 +15,25 @@ Chunk::~Chunk() {
  * Adds a single byte into the chunk's
  * bytecode array.
  */
-void Chunk::Write(std::uint8_t byte, std::size_t line) {
+void Chunk::Write(std::uint8_t byte, const Token& where) {
     bytecode.PushBack(byte);
 
     // Check if we're still on the same line as the last instruction.
-    if (lines.Count() > 0 && lines[lines.Count() - 1].line == line) {
+    SourcePosition& lastPosition = positions[positions.Count() - 1];
+    if (
+        positions.Count() > 0 
+        && lastPosition.line == where.line
+        && lastPosition.line == where.column
+    ) {
         return;
     }
 
-    LineStart newLine;
-    newLine.offset = bytecode.Count() - 1;
-    newLine.line = line;
-    lines.PushBack(newLine);
+    SourcePosition newPosition;
+    newPosition.offset = bytecode.Count() - 1;
+    newPosition.line = where.line;
+    newPosition.column = where.column;
+
+    positions.PushBack(newPosition);
 }
 
 
@@ -35,9 +42,9 @@ void Chunk::Write(std::uint8_t byte, std::size_t line) {
  * This is used for instructions that require 2 bytes of data,
  * such as an instruction prefixed with OpCode::WIDE
  */
-void Chunk::WriteShort(std::uint16_t byte, std::size_t line) {
-    Write((byte >> 8) & 0xFF, line);
-    Write(byte & 0xFF, line);
+void Chunk::WriteShort(std::uint16_t byte, const Token& where) {
+    Write((byte >> 8) & 0xFF, where);
+    Write(byte & 0xFF, where);
 }
 
 
@@ -47,22 +54,22 @@ void Chunk::WriteShort(std::uint16_t byte, std::size_t line) {
  * in its bytecode stream to load it during
  * runtime.
  */
-void Chunk::WriteConstant(Value value, std::size_t line) {
+void Chunk::WriteConstant(Value value, const Token& where) {
     std::size_t constantIndex = AddConstant(value);
 
     if (constantIndex > UINT8_MAX) {
-        Write(OpCode::SHORT, line);
-        Write(OpCode::CONSTANT, line);
+        Write(OpCode::SHORT, where);
+        Write(OpCode::CONSTANT, where);
 
         /*
             We will split the index (a std::uint16_t) 
             into two std::uint8_t's, and during runtime
             we'll combine it all again.
         */
-        WriteShort(static_cast<std::uint16_t>(constantIndex), line);
+        WriteShort(static_cast<std::uint16_t>(constantIndex), where);
     } else {
-        Write(OpCode::CONSTANT, line);
-        Write(static_cast<std::uint8_t>(constantIndex), line);
+        Write(OpCode::CONSTANT, where);
+        Write(static_cast<std::uint8_t>(constantIndex), where);
     }
 }
 
@@ -84,24 +91,24 @@ std::size_t Chunk::AddConstant(Value value) {
  * Returns the line of a byte in the bytecode stream,
  * taking its index as the input.
  */
-std::size_t Chunk::GetLine(std::size_t byteOffset) {
+SourcePosition Chunk::GetSourcePosition(std::size_t byteOffset) {
     /*
         We will loop through the line array from beginning
         to end until we find a LineStart that matches the 
         instruction's byte offset.
     */
 
-    std::size_t end = lines.Count() - 1;
+    std::size_t end = positions.Count() - 1;
     for (std::size_t i = 0; i < end; i++) {
         /*
             The next line in the list has a larger
             instruction offset, that means the last one
             has to be the LineStart we're looking for
         */
-        if (byteOffset < lines[i + 1].offset) return lines[i].line;
+        if (byteOffset < positions[i + 1].offset) return positions[i];
     }
 
-    return lines[end].line;
+    return positions[end];
 }
 
 

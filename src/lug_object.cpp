@@ -309,6 +309,9 @@ ObjString* ObjString::Sub(int start, int end) {
 
 
 ObjString* ObjString::Concatenate(ObjString* other) {
+    vm.stack.Push(this);
+    vm.stack.Push(other);
+
     std::size_t totalLength = length + other->length;
     char* combinedChars = Memory::Allocate<char>(vm, totalLength + 1);
 
@@ -317,6 +320,9 @@ ObjString* ObjString::Concatenate(ObjString* other) {
     combinedChars[totalLength] = '\0';
 
     ObjString* result = ObjString::FromAllocated(vm, combinedChars, totalLength);
+
+    vm.stack.Pop();
+    vm.stack.Pop();
 
     return result;
 }

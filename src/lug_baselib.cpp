@@ -75,7 +75,10 @@ static Value Assert(VMCore& vm, Value* args, std::size_t argCount) {
 
     if (!args[0].AsBool()) {
         ObjString* errorMessage = args[1].AsObj<ObjString>();
-        throw vm.RuntimeError(errorMessage->characters);
+        ObjString* assertionPrefix = ObjString::FromLiteral(vm, "assertion failed: ");
+        ObjString* fullMessage = assertionPrefix->Concatenate(errorMessage);
+
+        throw vm.RuntimeError(fullMessage->characters);
     }
     
     return 0;

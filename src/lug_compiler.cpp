@@ -67,7 +67,7 @@ void FunctionUnit::AddLocal(Token name) {
         }
 
         if (local.name == name) {
-            parser.Error("already a variable with this name in this scope");
+            parser.Error("'%.*s' already defined in this scope", local.name.length, local.name.start);
         }
     }
 
@@ -148,7 +148,7 @@ int FunctionUnit::ResolveLocal(const Token& name) const {
             */
 
             if (!local.initialized) {
-                parser.Error("can't read local variable in its own initializer");
+                parser.Error("can't read '%.*s' in its own initializer", parser.previous.length, parser.previous.start);
             }
 
             return slot;
@@ -325,7 +325,7 @@ ObjFunction* Compiler::PopUnit() {
  * Emits a byte into the current chunk's bytecode array
  */
 void Compiler::EmitByte(std::uint8_t byte) {
-    CurrentChunk()->Write(byte, parser.previous.line);
+    CurrentChunk()->Write(byte, parser.previous);
 }
 
 /**
@@ -341,7 +341,7 @@ void Compiler::EmitBytes(std::uint8_t a, std::uint8_t b) {
  * Emits a short as two std::uint8_t's.
  */
 void Compiler::EmitShort(std::uint16_t byte) {
-     CurrentChunk()->WriteShort(byte, parser.previous.line);
+     CurrentChunk()->WriteShort(byte, parser.previous);
 }
 
 
@@ -362,7 +362,7 @@ void Compiler::EmitReturn() {
  * the constant in the constant pool
  */
 void Compiler::EmitConstant(Value value) {
-    CurrentChunk()->WriteConstant(value, parser.previous.line);
+    CurrentChunk()->WriteConstant(value, parser.previous);
 }
 
 
@@ -792,6 +792,7 @@ void Compiler::BoxStatement() {
     std::uint16_t global = ParseVariable("expected variable name");
     pendingName = parser.previous;
 
+    // box a <- 5
     if (parser.Match(TokenType::LEFT_ARROW)) {
         StoredExpression();
     // box a
@@ -1703,7 +1704,7 @@ void Compiler::Function(bool canAssign) {
                 Expression();
 
             } else if (currentFunction->defaults.Count() > 0) {
-                parser.ErrorAtCurrent("can't define a non-default parameter after a default parameter");
+                parser.Error("can't define a non-default parameter after a default parameter");
             } else {
                 parameters.minArity++;
             }
@@ -1923,7 +1924,7 @@ void Compiler::ParsePrecedence(Precedence minimumPrecedence) {
 
     ParseFn prefixRule = GetRule(parser.previous.type).prefix;
     if (prefixRule == nullptr) {
-        parser.ErrorAt(parser.previous, "expected expression");
+        parser.Error("expected expression");
         return;
     }
 

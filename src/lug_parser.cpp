@@ -1,13 +1,15 @@
 #include <cstdio>
+#include <sstream>
 #include <cstdarg>
-#include <stdexcept>
 
 #include "luggage.hpp"
 #include "lug_parser.h"
 
 namespace Luggage {
 
-static std::string FormatErrorMessage(const char* format, va_list args) {
+// Helper functions -----------------------------
+
+static std::string FormatString(const char* format, va_list args) {
     va_list sizeArgs;
     va_copy(sizeArgs, args);
     const int length = std::vsnprintf(nullptr, 0, format, sizeArgs);
@@ -29,13 +31,17 @@ static std::string FormatErrorMessage(const char* format, va_list args) {
     return message;
 }
 
-void Parser::Reset(const char* source, std::filesystem::path path) {
-    modulePath = path;
+// Parser public functions -----------------------------
+
+void Parser::Reset(const char* source, std::filesystem::path scrPath) {
+    scriptPath = scrPath;
+
     lexer.Reset(source);
     Advance();
 }
 
-// PARSER PARSE FUNCTIONS -----------------------------
+// Parser private functions -----------------------------
+
 void Parser::Advance() {
     previous = current;
     current = lexer.ScanToken();
@@ -70,55 +76,83 @@ bool Parser::IsAtEnd() {
 
 
 // ERROR FUNCTIONS -----------------------------
-void Parser::ErrorAt(const Token& token, const char* format, ...) {
+
+std::string Parser::ErrorDetails(const Token& at) const {
+    std::string lineContents = lexer.LineContents(at.line);
+
+    std::string lineNum = std::to_string(at.line);
+    std::string lineNumPadding(lineNum.size(), ' ');
+
+    std::string columnPadding;
+    for (std::size_t i = 0; i < at.column - 1 && i < lineContents.size(); i++) {
+        if (lineContents[i] == '\t') columnPadding += '\t';
+        else columnPadding += ' ';
+    }
+    
+    std::string details;
+    details += lineNumPadding   + " |\n";
+    details += lineNum          + " | " + lineContents + '\n';
+    details += lineNumPadding   + " | ";
+    details += columnPadding + std::string(at.length != 0 ? at.length : 1, '^');
+
+    return details;
+}
+
+
+void Parser::ErrorAt(const Token& at, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    const std::string message = FormatErrorMessage(format, args);
-    va_end(args);
 
-    std::string errorMessage;
+    std::string out;
+    std::string message = FormatString(format, args);
     
-    errorMessage.append(modulePath.filename().string().c_str());
-    errorMessage += ":";
-    errorMessage += std::to_string(token.line);
-    errorMessage += ": error";
-
-    if (token.type == TokenType::END_OF_FILE) {
-        errorMessage += " at end";
-    } else if (token.type == TokenType::ERROR) {
-        // Nothing.
-    } else {
-        errorMessage += " at '";
-        errorMessage.append(token.start, token.length);
-        errorMessage += "'";
+    // error at '...'
+    out += "error";
+    if (at.type == TokenType::END_OF_FILE) {
+        out += " at end";
+    } else if (at.type != TokenType::ERROR) {
+        out += " at '";
+        out.append(at.start, at.length);
+        out += "'";
     }
 
-    errorMessage += ": ";
-    errorMessage += message;
+    // : message
+    out += ": " + message + "\n";
+    
+    // --> script_name.lug:line:col
+    //      | 
+    // line | ...
+    //      | 
+    //! TODO: we probably should actually display the script's path
+    // instead of just the name but this works fine for now
+    out += " --> " + scriptPath.filename().string();
+
+    out += ":" + std::to_string(at.line) + ":" + std::to_string(at.column) + '\n';
+    out += ErrorDetails(at);
 
     LugError error;
     error.type = InterpretResult::COMPILE_ERROR;
-    error.message = errorMessage;
+    error.message = out;
 
+    va_end(args);
+    
     throw error;
 }
+
 
 void Parser::ErrorAtCurrent(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    const std::string message = FormatErrorMessage(format, args);
+    ErrorAt(current, format, args);
     va_end(args);
-    ErrorAt(current, message.c_str());
 }
 
 
 void Parser::Error(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    const std::string message = FormatErrorMessage(format, args);
+    ErrorAt(previous, format, args);
     va_end(args);
-    ErrorAt(previous, message.c_str());
 }
-
 
 } // Luggage

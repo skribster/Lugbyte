@@ -162,7 +162,7 @@ LugError VMCore::RuntimeError(const char* format, Args... args) {
     CallFrame* frame = stack.GetFrame();
     ObjFunction* function = frame->closure->function;
     std::size_t instruction = frame->ip - function->chunk.bytecode.Data() - 1;
-    std::size_t line = function->chunk.GetLine(instruction);
+    std::size_t line = function->chunk.GetSourcePosition(instruction).line;
 
     LugError error;
     error.type = InterpretResult::RUNTIME_ERROR;

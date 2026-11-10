@@ -1,6 +1,3 @@
-// expect: can't define a non-default parameter after a default parameter
-box test <- function(a <- 1, b <- 2)
-    print(a, b)
-end
-
-test(1, 2)
+function(b, c <- 3, d)
+    b()
+end()

@@ -55,10 +55,7 @@ struct LugError {
  */
 class VMCore;
 
-
-
 // VM -------------------------------------------
-
 
 std::optional<std::filesystem::path> DefaultResolveModule(
     const std::filesystem::path& importerPath, 
@@ -110,9 +107,6 @@ struct VMConfig {
  */
 class VM {
 public:
-    
-
-
     explicit VM(const VMConfig& config = {});
     ~VM();
 
@@ -145,8 +139,5 @@ private:
     std::unique_ptr<VMCore> core;
     VMConfig config;
 };
-
-
-// Config ---------------------------------------
 
 }

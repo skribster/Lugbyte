@@ -8,6 +8,20 @@
 
 namespace fs = std::filesystem;
 
+static void OnError(const Luggage::LugError& error) {
+    std::cerr << "\033[31m" << error.message << "\033[0m" << std::endl;
+}
+
+
+static std::optional<fs::path> OnResolve(fs::path importer, const fs::path requested) {
+    fs::path path = fs::path("bootstrap/") / requested;
+    path.replace_extension(".lug");
+    if (!fs::is_regular_file(path)) return std::nullopt;
+
+    return path;
+}
+
+
 static void Repl(Luggage::VM& vm) {
     std::cout << "Luggage Interactive REPL\n";
 
@@ -18,7 +32,7 @@ static void Repl(Luggage::VM& vm) {
 
         if (line.empty()) break;
 
-        Luggage::InterpretResult result = vm.Interpret(line);
+        Luggage::InterpretResult result = vm.Interpret(line, "repl");
         if (result != Luggage::InterpretResult::OK) {
             const Luggage::LugError& error = vm.LastError();
             std::cerr << error.message << '\n';
@@ -41,13 +55,13 @@ static std::string ReadFile(std::string_view path) {
     return buffer.str();
 }
 
+
 static void RunFile(Luggage::VM& vm, std::string_view path) {
     Luggage::InterpretResult result = vm.InterpretFile(path);
 
     if (result == Luggage::InterpretResult::OK) return;
     
     const Luggage::LugError& error = vm.LastError();
-    std::cerr << "\033[31m" << error.message << "\033[0m" << std::endl;
 
     // Exit codes consistent with the Unix sysexits.h standard
     if (result == Luggage::InterpretResult::COMPILE_ERROR) exit(65);
@@ -59,14 +73,8 @@ static void RunFile(Luggage::VM& vm, std::string_view path) {
 
 int main(int argc, char* argv[]) {
     Luggage::VMConfig config;
-    config.resolveModuleFn = [](fs::path importer, fs::path requested)
-        -> std::optional<fs::path> {
-        fs::path p = fs::path("bootstrap/") / requested;
-        p.replace_extension(".lug");
-        if (!fs::is_regular_file(p)) return std::nullopt;   // "module not found"
-        
-        return p;
-    };
+    config.resolveModuleFn = OnResolve;
+    config.errorFn = OnError;
 
     Luggage::VM vm(config);
     vm.LoadLibrary(Luggage::LibInclude::ALL);

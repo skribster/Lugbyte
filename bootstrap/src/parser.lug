@@ -1,0 +1,22 @@
+box Parser <- thing
+
+Parser.new <- function(tokens)
+    assert(type(tokens) = "list", "expected token list")
+
+    return thing of Parser {
+        tokens <- tokens
+    }
+end
+
+
+Parser.expression <- function(shared self)
+    return self:equality()
+end
+
+
+Parser.equality <- function(shared self)
+    
+end
+
+
+return Parser

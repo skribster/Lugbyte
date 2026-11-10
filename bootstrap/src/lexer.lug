@@ -4,7 +4,38 @@ box Token <- unbox("token")
 // Helper -----------------------------
 
 box KEYWORDS <- {
-    
+    "and"           <- Token.Type.AND, 	
+	"at"            <- Token.Type.AT, 	
+	"box"           <- Token.Type.BOX, 	
+	"break"         <- Token.Type.BREAK, 
+	"by"            <- Token.Type.BY, 	
+    "category"      <- Token.Type.CATEGORY, 
+    "continue"      <- Token.Type.CONTINUE, 
+	"count"         <- Token.Type.COUNT, 
+	"do"            <- Token.Type.DO, 	
+	"else"          <- Token.Type.ELSE, 
+	"elseif"        <- Token.Type.ELSEIF, 
+	"end"           <- Token.Type.END, 	
+	"false"         <- Token.Type.FALSE, 
+	"function"      <- Token.Type.FUNCTION, 
+	"foreach"       <- Token.Type.FOREACH, 
+	"from"          <- Token.Type.FROM, 
+	"if"            <- Token.Type.IF, 	
+	"in"            <- Token.Type.IN, 	
+	"inspect"       <- Token.Type.INSPECT, 
+	"nil"           <- Token.Type.NIL, 	
+	"not"           <- Token.Type.NOT, 	
+	"of"            <- Token.Type.OF, 	
+	"or"            <- Token.Type.OR, 	
+	"return"        <- Token.Type.RETURN, 
+	"share"         <- Token.Type.SHARE, 
+	"shared"        <- Token.Type.SHARED, 
+	"then"          <- Token.Type.THEN, 
+	"thing"         <- Token.Type.THING, 
+	"to"            <- Token.Type.TO,  
+	"true"          <- Token.Type.TRUE, 
+	"while"         <- Token.Type.WHEN, 
+	"when"          <- Token.Type.WHILE
 }
 
 box isAlnum <- function(character)
@@ -99,7 +130,7 @@ Lexer.scanToken <- function(shared self)
         end
 
         when '"' do 
-            
+            self:string()
         end
 
         else
@@ -128,8 +159,13 @@ Lexer.number <- function(shared self)
         end
     end
 
-    box numLiteral <- number(self.source[self.start to self.current])
-    self:addToken(Token.Type.NUMBER, numLiteral)
+    box numberLiteral <- number(self:getLexeme())
+    self:addToken(Token.Type.NUMBER, numberLiteral)
+end
+
+
+Lexer.string <- function(shared self)
+
 end
 
 
@@ -138,7 +174,7 @@ Lexer.identifier <- function(shared self)
         self:advance()
     end
     
-    box lexeme <- self.source[self.start to self.current - 1]
+    box lexeme <- self:getLexeme()
     box type <- KEYWORDS:get(lexeme)
     if type = nil then type <- Token.Type.IDENTIFIER end
     self:addToken(type, lexeme)
@@ -153,7 +189,7 @@ end
 
 
 Lexer.addToken <- function(shared self, type, literal <- nil)
-    box lexeme <- self.source[self.start to self.current - 1]
+    box lexeme <- self:getLexeme()
     box token <- Token.new(type, lexeme, literal, self.line)
     
     self.tokens:append(share token)
@@ -165,17 +201,17 @@ Lexer.advance <- function(shared self)
 end
 
 Lexer.isAtEnd <- function(shared self)
-    return self.current >= self.source:length() - 1
+    return self.current >= self.source:length()
 end
 
 Lexer.peek <- function(shared self)
-    if self:isAtEnd() then return "\0" end
+    if self:isAtEnd() then return '\0' end
     return self.source[self.current]
 end
 
 Lexer.peekNext <- function(shared self)
     if self.current + 1 >= self.source:length() then
-        return "\0"
+        return '\0'
     end
 
     return self.source[self.current + 1]
@@ -188,6 +224,10 @@ Lexer.match <- function(shared self, expected)
     self:advance()
 
     return true
+end
+
+Lexer.getLexeme <- function(shared self)
+    return self.source[self.start to self.current - 1]
 end
 
 

@@ -64,6 +64,7 @@ Token.Type <- category
     SHARED,
     THEN,
     THING,
+    TO,
     TRUE,
     WHEN,
     WHILE,

@@ -1,0 +1,50 @@
+box Expr <- thing
+
+
+Expr.Binary <- function(left, op, right)
+    box binaryExpr <- thing
+    
+    binaryExpr.left <- left,
+    binaryExpr.op <- op,
+    binaryExpr.right <- right,
+
+    binaryExpr.accept <- function(shared self, visitor)
+        visitor:visitBinaryExpr(self)
+    end
+end
+
+
+Expr.Grouping <- function(expr)
+    box groupingExpr <- thing
+
+    groupingExpr.expr <- expr
+
+    groupingExpr.accept <- function(shared self, visitor)
+        visitor:visitGroupingExpr(self)
+    end
+end
+
+
+Expr.Literal <- function(value)
+    box literalExpr <- thing
+
+    literalExpr.value <- value
+    literalExpr.accept <- function(shared self, visitor)
+        visitor:visitLiteralExpr(self)
+    end
+end
+
+
+Expr.Unary <- function(op, right)
+    box unaryExpr <- thing
+
+    unaryExpr.op <- op
+    unaryExpr.right <- right
+
+    unaryExpr.accept <- function(shared self, visitor)
+        visitor:visitUnaryExpr(self)
+    end
+end
+
+
+return Expr

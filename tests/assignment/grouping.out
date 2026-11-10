@@ -1,1 +1,5 @@
-tests:2: error at '<-': invalid assignment target
+error at '<-': invalid assignment target
+ --> tests:2:5
+  |
+2 | (a) <- "value" // error at '<-': invalid assignment target
+  |     ^^

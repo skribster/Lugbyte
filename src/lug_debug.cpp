@@ -109,10 +109,10 @@ std::size_t DisassembleInstruction(Chunk& chunk, std::size_t offset) {
     // we simply display a | to symbolize that the line
     // continues on for these instructions. Only when we
     // encounter a new line do we display the line number.
-    if (offset > 0 && chunk.GetLine(offset) == chunk.GetLine(offset - 1)) {
+    if (offset > 0 && chunk.GetSourcePosition(offset).line == chunk.GetSourcePosition(offset - 1).line) {
         std::printf("   | ");
     } else {
-        std::printf("%4zu ", chunk.GetLine(offset));
+        std::printf("%4zu ", chunk.GetSourcePosition(offset).line);
     }
 
     std::uint8_t instruction = chunk.bytecode[offset];

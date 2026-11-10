@@ -1,5 +1,5 @@
 #include <cstring>
-#include <array>
+#include <sstream>
 
 #include "luggage.hpp"
 #include "lug_lexer.h"
@@ -103,6 +103,7 @@ Token Lexer::MakeToken(TokenType type) {
     // by subtracting the current pointer by the start pointer
     token.length = static_cast<std::size_t>(current - start);
     token.line = line;
+    token.column = static_cast<std::size_t>(start - lineStart) + 1;
     
     return token;
 }
@@ -113,10 +114,12 @@ Token Lexer::MakeToken(TokenType type) {
  */
 Token Lexer::ErrorToken(const char* message) {
     Token token;
+    
     token.type = TokenType::ERROR;
-    token.length = std::strlen(message);
+    token.length = static_cast<std::size_t>(current - start);
     token.start = message;
     token.line = line;
+    token.column = static_cast<std::size_t>(start - lineStart) + 1;
 
     return token;
 }
@@ -128,7 +131,7 @@ Token Lexer::Identifier() {
     TokenType identifierType = TokenType::IDENTIFIER;
 
     for (const Keyword& keyword : keywords) {
-        std::size_t lexemeLength = static_cast<int>(current - start);
+        std::size_t lexemeLength = static_cast<std::size_t>(current - start);
         if (lexemeLength != keyword.length) continue;
 
         bool contentEqual = std::memcmp(start, keyword.identifier, keyword.length) == 0;
@@ -204,6 +207,7 @@ void Lexer::SkipWhitespace() {
             case '\n':
                 line++;
                 Advance();
+                lineStart = current;
                 break;
 
             case '/':
@@ -345,5 +349,16 @@ Token Lexer::ScanToken() {
     return ErrorToken("unexpected character");
 }
 
+
+std::string Lexer::LineContents(std::size_t lineNumber) const {
+    std::istringstream stream(source);
+    std::string lineContents;
+
+    for (size_t i = 1; std::getline(stream, lineContents); i++) {
+        if (i == lineNumber) return lineContents;
+    }
+
+    return {};
+}
 
 }
