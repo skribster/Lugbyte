@@ -1,10 +1,14 @@
+box Expr <- unbox("expr")
+box Token <- unbox("token")
+
 box Parser <- thing
 
 Parser.new <- function(tokens)
     assert(type(tokens) = "list", "expected token list")
 
     return thing of Parser {
-        tokens <- tokens
+        tokens <- tokens,
+        current <- 0
     }
 end
 
@@ -15,7 +19,134 @@ end
 
 
 Parser.equality <- function(shared self)
+    box expr <- self:comparison()
+
+    while self:match(Token.Type.BANG_EQUAL, Token.Type.EQUAL) do
+        box operator <- self:previous()
+        box right <- comparison()
+        expr <- Expr.Binary(expr, operator, right)
+    end
     
+    return expr
+end
+
+
+Parser.comparison <- function(shared self)
+    box expr <- self:term()
+
+    while self:match(Token.Type.GREATER, Token.Type.GREATER_EQUAL, Token.Type.LESS, Token.Type.LESS_EQUAL) do
+        box operator <- self:previous()
+        box right <- self:term()
+        expr <- Expr.Binary(expr, operator, right)
+    end
+
+    return expr
+end
+
+
+Parser.term <- function(shared self)
+    box expr <- self:factor()
+
+    while self:match(Token.Type.MINUS, Token.Type.PLUS) do
+        box operator <- self:previous()
+        box right <- self:factor()
+        expr <- Expr.Binary(expr, operator, right)
+    end
+
+    return expr
+end
+
+
+Parser.factor <- function(shared self)
+    box expr <- self:unary()
+
+    while self:match(Token.Type.SLASH, Token.Type.STAR) do
+        box operator <- self:previous()
+        box right <- self:unary()
+        expr <- Expr.Binary(expr, operator, right)
+    end
+
+    return expr
+end
+
+
+Parser.unary <- function(shared self)
+    if self:match(Token.Type.NOT, Token.Type.MINUS) then
+        box operator <- self:previous()
+        box right <- unary()
+        return Expr.Unary(operator, right)
+    end
+
+    return self:primary()
+end
+
+
+Parser.primary <- function(shared self)
+    if self:match(Token.Type.FALSE) then
+        return Expr.Literal(false)
+    end
+    
+    if self:match(Token.Type.TRUE) then
+        return Expr.Literal(true)
+    end
+    
+    if self:match(Token.Type.NIL) then
+        return Expr.Literal(nil)
+    end
+    
+    if self:match(Token.Type.NUMBER, Token.Type.STRING) then
+        return Expr.Literal(self:previous().literal)
+    end
+
+    if self:match(Token.Type.LEFT_PAREN) then
+        box expr <- self:expression()
+        self:consume(Token.Type.RIGHT_PAREN, "expected ')' after expression");
+        return Expr.Grouping(expr)
+    end
+
+    error("expected expression")
+end
+
+
+Parser.match <- function(shared self, types...)
+    foreach type in types do  
+        if self:check(type) then
+            self:advance()
+            return true
+        end
+    end
+
+    return false
+end
+
+
+Parser.check <- function(shared self, expected)
+    if self:isAtEnd() then return false end
+    return self:peek().type = expected
+end
+
+
+Parser.advance <- function(shared self)
+    if not self:isAtEnd() then
+        self.current <- self.current + 1
+    end
+
+    return self:previous()
+end
+
+
+Parser.isAtEnd <- function(shared self)
+    return self:peek().type = Token.Type.EOF
+end
+
+
+Parser.peek <- function(shared self)
+    return self.tokens:get(self.current)
+end
+
+
+Parser.previous <- function(shared self)
+    return self.tokens:get(self.current - 1)
 end
 
 

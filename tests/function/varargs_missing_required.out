@@ -1,0 +1,3 @@
+runtime error: expected at least 1 argument(s) but got 0
+stack traceback:
+    tests:5:9: in script

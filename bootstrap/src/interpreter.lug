@@ -1,0 +1,142 @@
+box Token <- unbox("token")
+
+box Interpreter <- thing
+
+// Helper functions -----------------------------
+
+box isTruthy <- function(object)
+    if object = nil then return false end
+    if type(object) = 'boolean' then return object end
+    
+    return true
+end
+
+box checkNumberOperands <- function(left, right)
+    if type(left) = "number" and type(right) = "number" then
+        return
+    end
+
+    error("operands must be numbers, got " + type(left) + " and " + type(right))
+end
+
+// Visitor methods ------------------------------
+
+Interpreter.new <- function()
+    return thing of Interpreter
+end
+
+
+Interpreter.interpret <- function(shared self, expr)
+    box result <- pcall(function()
+        box value <- self:evaluate(expr)
+        print(value)
+    end)
+
+    if not result.success then
+        print(result.result)
+    end
+end
+
+
+Interpreter.evaluate <- function(shared self, expr)
+    return expr:accept(self)
+end
+
+
+Interpreter.visitBinaryExpr <- function(shared self, expr)
+    box left <- self:evaluate(expr.left)
+    box right <- self:evaluate(expr.right)
+
+    inspect expr.operator.type
+        // Arithmetic operators
+        when Token.Type.MINUS do
+            checkNumberOperands(left, right)
+            return number(left) - number(right)
+        end
+
+        when Token.Type.PLUS do
+            if type(left) = "number" and type(right) = "number" then
+                return number(left) + number(right)
+            end
+
+            if type(left) = "string" and type(right) = "string" then
+                return string(left) + string(right)
+            end
+
+            error("operands must be two numbers or two strings")
+        end
+
+        when Token.Type.SLASH do
+            checkNumberOperands(left, right)
+            return number(left) / number(right)
+        end
+
+        when Token.Type.STAR do
+            checkNumberOperands(left, right)
+            return number(left) * number(right)
+        end
+
+        // Comparison operators
+        when Token.Type.GREATER do
+            checkNumberOperands(left, right)
+            return number(left) > number(right)
+        end
+
+        when Token.Type.GREATER_EQUAL do
+            checkNumberOperands(left, right)
+            return number(left) >= number(right)
+        end
+
+        when Token.Type.LESS do
+            checkNumberOperands(left, right)
+            return number(left) < number(right)
+        end
+
+        when Token.Type.LESS_EQUAL do
+            checkNumberOperands(left, right)
+            return number(left) <= number(right)
+        end
+
+        // Equality operators
+        when Token.Type.BANG_EQUAL do
+            return a != b
+        end
+
+        when Token.Type.EQUAL do
+            return a = b
+        end
+    end
+
+    // Unreachable.
+    return nil
+end
+
+
+Interpreter.visitLiteralExpr <- function(shared self, expr)
+    return expr.value
+end
+
+
+Interpreter.visitUnaryExpr <- function(shared self, expr)
+    box right <- self:evaluate(expr.right)
+
+    inspect expr.operator.type
+        when Token.Type.NOT do
+            return not self:isTruthy(right)
+        end
+
+        when Token.Type.MINUS do
+            return -number(right)
+        end
+    end
+
+    return nil
+end
+
+
+// Private methods ------------------------------
+
+
+
+
+return Interpreter

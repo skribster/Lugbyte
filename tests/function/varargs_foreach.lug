@@ -1,0 +1,8 @@
+box printArgs <- function(args...)
+    foreach arg in args do
+        print(arg)
+    end
+end
+
+printArgs(1, 2, 3)
+printArgs()

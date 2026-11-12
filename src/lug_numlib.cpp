@@ -73,9 +73,8 @@ static Value __Call__(VMCore& vm, Value* args, std::size_t argCount) {
 
     Value value = args[0];
 
-    if (value.IsBool()) {
-        return value.AsBool() ? 1 : 0;
-    }
+    if (value.IsNumber()) return value;
+    if (value.IsBool()) return value.AsBool() ? 1 : 0;
     
     if (value.IsObj(ObjType::STRING)) {
         ObjString* string = value.AsObj<ObjString>();
@@ -90,6 +89,7 @@ static Value __Call__(VMCore& vm, Value* args, std::size_t argCount) {
         // Successful path
         if (errorCode == std::errc()) return value;
     }
+
 
     return Value::Nil();
 }

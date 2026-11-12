@@ -1,10 +1,21 @@
-box Lexer <- unbox("src/lexer")
-box Parser <- unbox("src/parser")
+// Imports --------------------------------------
+box Lexer           <- unbox("src/lexer")
+box ASTPrinter      <- unbox("src/ast_printer")
+box Parser          <- unbox("src/parser")
+box Expr            <- unbox("src/expr")
+box Interpreter     <- unbox("src/interpreter")
+box Token           <- unbox("src/token")
 
-box newLexer <- Lexer.new("box a <- 5.2")
+// Language pipeline ----------------------------
+box newLexer <- Lexer.new("1 + \"hello\"")
 box tokens <- newLexer:scanTokens()
 
 box newParser <- Parser.new(tokens)
+box expr <- newParser:expression()
 
+box printer <- ASTPrinter.new()
 
-print(tokens:join("\n"))
+print(printer:print(expr))
+
+box interpreter <- Interpreter.new()
+interpreter:interpret(expr)

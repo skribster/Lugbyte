@@ -1,0 +1,48 @@
+box ASTPrinter <- thing
+
+
+ASTPrinter.new <- function() 
+    return thing of ASTPrinter
+end
+
+
+ASTPrinter.print <- function(shared self, expr)
+    return expr:accept(self)
+end
+
+
+ASTPrinter.visitBinaryExpr <- function(shared self, expr)
+    return self:parenthesize(expr.operator.lexeme, expr.left, expr.right)
+end
+
+
+ASTPrinter.visitGroupingExpr <- function(shared self, expr)
+    return self:parenthesize("group", expr.expression)
+end
+
+
+ASTPrinter.visitLiteralExpr <- function(shared self, expr)
+    return string(expr.value)
+end
+
+
+ASTPrinter.visitUnaryExpr <- function(shared self, expr)
+    return self:parenthesize(expr.operator.lexeme, expr.right)
+end
+
+
+ASTPrinter.parenthesize <- function(shared self, name, exprs...) 
+    box out <- "(" + name
+
+    foreach expr in exprs do
+        out <- out + " "
+        out <- out + expr:accept(self)
+    end
+
+    out <- out + ")"
+
+    return out
+end
+
+
+return ASTPrinter

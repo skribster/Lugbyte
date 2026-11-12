@@ -1,0 +1,33 @@
+box update <- function(shared target, amount <- target:length(), rest...)
+    target:append(amount)
+    print(amount, rest:length(), rest:sum(), target:length())
+    if rest:length() > 0 then
+        print(rest[0], rest[-1])
+    end
+end
+
+box target <- [10]
+update(share target)
+update(share target, 4)
+update(share target, 2, 5, 6)
+print(target:sum())
+
+box appendDefault <- function(shared values <- [], rest...)
+    values:append(1)
+    print(values:length(), values:sum(), rest:length())
+end
+
+appendDefault()
+appendDefault()
+
+box external <- [10]
+appendDefault(share external, 3, 4)
+print(external:sum())
+
+box inspectItems <- function(items...)
+print(items:length(), items:sum())
+end
+
+inspectItems()
+inspectItems(7)
+inspectItems(7, 8)

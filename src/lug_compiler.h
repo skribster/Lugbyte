@@ -44,11 +44,11 @@ public:
 
     void BeginScope();
     void EndScope();
-    void AddLocal(Token name);
+    std::size_t AddLocal(Token name);
     void AddHiddenLocal(const char* name);
     std::size_t AddUpvalue(std::uint8_t slotIndex, bool isLocal);
     std::size_t DiscardLocals(std::size_t maxDepth);
-    void MarkInitialized();
+    void MarkInitialized(std::size_t slot);
 
     static constexpr int NOT_FOUND{ -1 };
     int ResolveLocal(const Token& name) const;
@@ -123,6 +123,14 @@ struct LoopContext {
 	LoopContext* outerLoop{ nullptr };
 };
 
+struct Variable {
+    bool isLocal;
+    union {
+        std::uint16_t globalIndex;
+        std::uint16_t localSlot;
+    };
+};
+
 
 class Compiler {
 public:
@@ -154,8 +162,8 @@ private:
     void EmitConstant(Value value);
     void EmitShortable(OpCode::Type op, std::uint16_t constant);
 
-    std::uint16_t MakeConstant(Value value);
-    std::uint16_t IdentifierConstant(Token& identifier);
+    Chunk::ConstantIndex MakeConstant(Value value);
+    Chunk::ConstantIndex IdentifierConstant(Token& identifier);
     void EmitIdentifier(Token& identifier);
 
     std::size_t EmitJump(OpCode::Type instruction);
@@ -170,9 +178,9 @@ private:
     std::uint16_t ReadShortOperand(std::size_t instructionOffset);
     void WriteShortOperand(std::size_t instructionOffset, std::uint16_t value);
 
-    std::uint16_t ParseVariable(const char* errorMessage);
-    void DeclareVariable();
-    void DefineVariable(std::uint16_t index);
+    Variable ParseVariable(const char* errorMessage);
+    std::size_t DeclareVariable();
+    void DefineVariable(Variable variable);
 
     // Parse methods
 
@@ -200,27 +208,28 @@ private:
     bool StoredExpression();
     void MarkGetter();
 
-    void Grouping(bool canAssign);
-    void Call(bool canAssign);
+    void GroupingExpr(bool canAssign);
+    void CallExpr(bool canAssign);
     ObjFunction::Arguments ArgumentList(std::size_t argcMax);
-    void Index(bool canAssign);
-    void Dot(bool canAssign);
+    void ParameterList(ObjFunction* from);
+    void IndexExpr(bool canAssign);
+    void DotExpr(bool canAssign);
 
-    void Unary(bool canAssign);
-    void Share(bool canAssign);
-    void Binary(bool canAssign);
-    void And(bool canAssign);
-    void Or(bool canAssign);
-    void Ternary(bool canAssign);
-    void Number(bool canAssign);
-    void String(bool canAssign);
-    void Literal(bool canAssign);
-    void Function(bool canAssign);
-    void List(bool canAssign);
-    void Dictionary(bool canAssign);
-    void Thing(bool canAssign);
-    void Category(bool canAssign);
-    void Variable(bool canAssign);
+    void UnaryExpr(bool canAssign);
+    void ShareExpr(bool canAssign);
+    void BinaryExpr(bool canAssign);
+    void AndExpr(bool canAssign);
+    void OrExpr(bool canAssign);
+    void TernaryExpr(bool canAssign);
+    void NumberExpr(bool canAssign);
+    void StringExpr(bool canAssign);
+    void LiteralExpr(bool canAssign);
+    void FunctionExpr(bool canAssign);
+    void ListExpr(bool canAssign);
+    void DictExpr(bool canAssign);
+    void ThingExpr(bool canAssign);
+    void CategoryExpr(bool canAssign);
+    void VariableExpr(bool canAssign);
     void NamedVariable(Token& name, bool canAssign);
 
     void ParsePrecedence(Precedence minimumPrecedence);

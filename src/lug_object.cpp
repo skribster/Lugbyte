@@ -646,6 +646,11 @@ void ObjList::Set(int index, Value value) {
 
 
 void ObjList::Insert(int index, Value value) {
+    if (index == 0 && Count() == 0) {
+        items->data.EmplaceBack(value);
+        return;
+    }
+
     int clampedIndex = ClampIndexWithBounds(index, Count());
     if (clampedIndex == -1) throw vm.RuntimeError("index '%d' out of range", index);
 

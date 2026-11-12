@@ -72,12 +72,12 @@ Token.Type <- category
     EOF
 end
 
-Token.new <- function(_type, _lexeme, _literal, _line)
+Token.new <- function(type, lexeme, literal, line)
     return thing of Token {
-        type    <- _type,
-        lexeme  <- _lexeme,
-        literal <- _literal,
-        line    <- _line
+        type    <- type,
+        lexeme  <- lexeme,
+        literal <- literal,
+        line    <- line
     }
 end
 

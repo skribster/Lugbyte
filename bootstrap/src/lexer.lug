@@ -165,7 +165,24 @@ end
 
 
 Lexer.string <- function(shared self)
+    while self:peek() != '"' and not self:isAtEnd() do
+        if self:peek() = '\n' then
+            error("unterminated strnig")
+        end
 
+        self:advance()
+    end
+
+    if self:isAtEnd() then
+        error("unterminated string")
+    end
+
+    // The closing "
+    self:advance()
+
+    // Trim the surrounding quotes
+    box value <- self.source[self.start + 1 to self.current - 2]
+    self:addToken(Token.Type.STRING, value)
 end
 
 

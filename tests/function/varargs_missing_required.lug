@@ -1,0 +1,5 @@
+box checked <- function(required, rest...)
+    print(required, rest:length())
+end
+
+checked()

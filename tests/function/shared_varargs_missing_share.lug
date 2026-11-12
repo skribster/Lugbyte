@@ -1,0 +1,5 @@
+box checked <- function(first, shared optional <- [9], rest...)
+    print(first, optional:length(), rest:length())
+end
+
+checked(1, [2], 3)

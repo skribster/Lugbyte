@@ -20,6 +20,8 @@ struct SourcePosition {
 
 struct Chunk {
 public: 
+    using ConstantIndex = std::uint16_t;
+
     explicit Chunk(VMCore& vm) 
         : vm(vm), constants(vm), bytecode(vm), positions(vm) 
     {};
@@ -28,7 +30,7 @@ public:
     void Write(std::uint8_t byte, const Token& where);
     void WriteShort(std::uint16_t byte, const Token& where);
     void WriteConstant(Value value, const Token& where);
-    std::size_t AddConstant(Value value);
+    ConstantIndex AddConstant(Value value);
     SourcePosition GetSourcePosition(std::size_t byteOffset);
 
     Vector<std::uint8_t> bytecode;

@@ -37,7 +37,7 @@ void FunctionUnit::EndScope() {
  * Adds a local and returns the slot where the local resides on the
  * vm's stack.
  */
-void FunctionUnit::AddLocal(Token name) {
+std::size_t FunctionUnit::AddLocal(Token name) {
     if (localCount == UINT8_COUNT) {
         parser.Error("too many local variables in function");
     }
@@ -67,19 +67,25 @@ void FunctionUnit::AddLocal(Token name) {
         }
 
         if (local.name == name) {
-            parser.Error("'%.*s' already defined in this scope", local.name.length, local.name.start);
+            parser.Error("already defined in this scope");
         }
     }
 
     Local& local = locals[localCount++];
     local.name = name;
     local.depth = scopeDepth;
+
+    // Return the local's slot index.
+    return localCount - 1;
 }
 
 
 void FunctionUnit::AddHiddenLocal(const char* name) {
-    AddLocal(Token::Synthetic(name));
-    compiler.DefineVariable(0);
+    Variable variable;
+    variable.localSlot = AddLocal(Token::Synthetic(name));;
+    variable.isLocal = true;
+
+    compiler.DefineVariable(variable);
 }
 
 
@@ -204,10 +210,13 @@ std::size_t FunctionUnit::DiscardLocals(std::size_t maxDepth) {
         /*
             Local variables occupy slots on the stack, so we should
             pop it from the stack when it goes out of scope.
+
             For every variable, we emit an OP_POP instruction to
             pop it from the stack.
-        */
 
+            If said local has been captured by an inner function, however,
+            we'd like to signal to the VM to close over it.
+        */
         if (locals[unpopped - 1].isCaptured) {
             compiler.EmitByte(OpCode::CLOSE_UPVALUE);
         } else {
@@ -221,13 +230,14 @@ std::size_t FunctionUnit::DiscardLocals(std::size_t maxDepth) {
 
 
 /**
- * Marks the most recent local as initialized.
+ * Marks the local in the given slot index as initialized.
+ * Initialized means that it is given a value.
  */
-void FunctionUnit::MarkInitialized() {
+void FunctionUnit::MarkInitialized(std::size_t slot) {
     if (scopeDepth == 0) return;
 
-    Local& recentLocal = locals[localCount - 1];
-    recentLocal.initialized = true;
+    Local& local = locals[slot];
+    local.initialized = true;
 }
 
 
@@ -294,10 +304,7 @@ void Compiler::PushUnit(FunctionUnit* unit, FunctionType type) {
         the ObjFunction* on the stack. We add a hidden local to 
         reserve an empty slot there.
     */
-    Local& local = unit->locals[unit->localCount++];
-    local.depth = 0;
-    local.name.start = "";
-    local.name.length = 0;
+    unit->AddLocal(Token::Synthetic("$fn slot"));
 }
 
 
@@ -393,10 +400,7 @@ void Compiler::EmitShortable(OpCode::Type op, std::uint16_t index) {
  * Adds the value in the constant pool and
  * returns the index of the constant.
  */
-std::uint16_t Compiler::MakeConstant(Value value) {
-    // MakeConstant returns the location of the
-    // constant in the chunk's constant pool.
-    
+Chunk::ConstantIndex Compiler::MakeConstant(Value value) {
     // Since the OP_CONSTANT instruction
     // can only store a 8-bit index operand, we need to
     // make sure the indices don't exceed that limit. 
@@ -413,7 +417,7 @@ std::uint16_t Compiler::MakeConstant(Value value) {
  * Adds the identifier as an ObjString constant in the 
  * constant pool and returns the index of the constant.
  */
-std::uint16_t Compiler::IdentifierConstant(Token& identifier) {
+Chunk::ConstantIndex Compiler::IdentifierConstant(Token& identifier) {
     ObjString* string = ObjString::FromSource(vm, identifier.start, identifier.length);
     return MakeConstant(string);
 }
@@ -430,40 +434,61 @@ void Compiler::EmitIdentifier(Token& identifier) {
  * 
  * If the variable is a global, this function uses the 
  * identifier to create a new ObjString* constant, in which
- * MakeVariable returns the index to.
+ * MakeVariable returns the constant index to.
+ * 
+ * If the variable is a local, it returns the slot index
+ * in which the local variable resides.
  */
-std::uint16_t Compiler::ParseVariable(const char* errorMessage) {
+Variable Compiler::ParseVariable(const char* errorMessage) {
     parser.Consume(TokenType::IDENTIFIER, errorMessage);
+    Variable variable;
 
-    DeclareVariable();
-    if (currentUnit->scopeDepth > 0 ) return 0; 
+    bool isLocal = currentUnit->scopeDepth > 0;
+    if (isLocal) {
+        std::uint16_t localSlot = DeclareVariable();
+        variable.localSlot = localSlot;
+        variable.isLocal = true;
+        
+    } else {
+        Chunk::ConstantIndex identifierIndex = IdentifierConstant(parser.previous);
+        variable.isLocal = false;
+        variable.globalIndex = identifierIndex;
+    }
 
-    return IdentifierConstant(parser.previous);
+    return variable;
 }
 
 
 /**
  * Declares the parser's previous token (presumed identifier)
  * as a variable. For any local variable, that means
- * adding it to the current unit's locals array. For global
- * variables, 'declaring' a variable is already handled in bytecode,
- * so this does nothing.
+ * adding it to the current unit's locals array, and returning
+ * the slot index the local is in.
+ * 
+ * For global variables, 'declaring' a variable is already handled 
+ * in bytecode via OpCode::DEFINE_GLOBAL, so this does nothing.
  */
-void Compiler::DeclareVariable() {
-    if (currentUnit->scopeDepth == 0) return;
+std::size_t Compiler::DeclareVariable() {
+    if (currentUnit->scopeDepth == 0) return 0;
 
     Token& name = parser.previous;
-    currentUnit->AddLocal(name);
+    return currentUnit->AddLocal(name);
 }
 
 
-void Compiler::DefineVariable(std::uint16_t index) {
-    if (currentUnit->scopeDepth > 0) {
-        currentUnit->MarkInitialized();
+/**
+ * Defines a given variable. 
+ * 
+ * If this variable is a global, it expects the variable's constant index as an input.
+ * If this variable is a local, it expects the local's slot number as an input.
+ */
+void Compiler::DefineVariable(Variable variable) {
+    if (variable.isLocal) {
+        currentUnit->MarkInitialized(variable.localSlot);
         return;
+    } else {
+        EmitShortable(OpCode::DEFINE_GLOBAL, variable.globalIndex);
     }
-
-    EmitShortable(OpCode::DEFINE_GLOBAL, index);
 }
 
 
@@ -789,7 +814,7 @@ bool Compiler::Statement() {
 
 
 void Compiler::BoxStatement() {
-    std::uint16_t global = ParseVariable("expected variable name");
+    Variable variable = ParseVariable("expected variable name");
     pendingName = parser.previous;
 
     // box a <- 5
@@ -800,7 +825,7 @@ void Compiler::BoxStatement() {
         EmitByte(OpCode::NIL);
     }
 
-    DefineVariable(global);
+    DefineVariable(variable);
     pendingName = Token::Synthetic("anonymous");
 }
 
@@ -963,8 +988,8 @@ void Compiler::CountStatement() {
     currentUnit->BeginScope();
 
     // Parse the counter as a new local.
-    ParseVariable("expected variable name");
-    DefineVariable(0);
+    Variable counterVariable = ParseVariable("expected variable name");
+    DefineVariable(counterVariable);
     
     int counter = currentUnit->ResolveLocal(parser.previous);
     ASSERT(counter != -1, "counter's slot is -1 and cannot be found");
@@ -1020,15 +1045,16 @@ void Compiler::ForeachStatement() {
 
     // Start by parsing the 'value' local and adding it as a local variable.
     EmitByte(OpCode::NIL);
-    ParseVariable("expected item name after 'foreach'");
-    DefineVariable(0);
+    Variable valueVariable = ParseVariable("expected item name after 'foreach'");
+    DefineVariable(valueVariable);
     
     // If we match 'at', that means we also have a variable for the key.
     // The key will hold the value of '0' for now.
     EmitByte(OpCode::NIL);
     if (parser.Match(TokenType::AT)) {
-        ParseVariable("expected key name after 'at'");
-        DefineVariable(0);
+        Variable keyVariable = ParseVariable("expected key name after 'at'");
+        DefineVariable(keyVariable);
+
     } else {
         // Make sure to add it as a local so that it actually pops off
         // the stack when the scope ends!!!!!!!!!!!!!!!!
@@ -1118,74 +1144,74 @@ void Compiler::ExpressionStatement() {
 
 const ParseRule Compiler::rules[] = {
     // Single-character tokens
-    { &Compiler::Grouping,      &Compiler::Call,        Precedence::CALL },             // LEFT_PAREN
-    { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_PAREN
-    { &Compiler::Dictionary,    nullptr,                Precedence::NONE },             // LEFT_BRACE
-    { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACE
-    { &Compiler::List,          &Compiler::Index,       Precedence::CALL },             // LEFT_BRACKET
-    { nullptr,                  nullptr,                Precedence::NONE },             // RIGHT_BRACKET
-    { nullptr,                  nullptr,                Precedence::NONE },             // COMMA
-    { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // DOT
-    { nullptr,                  nullptr,                Precedence::NONE },             // ELLIPSIS
-    { &Compiler::Unary,         &Compiler::Binary,      Precedence::TERM },             // MINUS
-    { nullptr,                  &Compiler::Binary,      Precedence::TERM },             // PLUS
-    { nullptr,                  nullptr,                Precedence::NONE },             // QUESTION
-    { nullptr,                  nullptr,                Precedence::NONE },             // SEMICOLON
-    { nullptr,                  &Compiler::Dot,         Precedence::CALL },             // COLON
-    { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // SLASH
-    { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // STAR
-    { nullptr,                  &Compiler::Binary,      Precedence::FACTOR },           // PERCENT
+    { &Compiler::GroupingExpr,      &Compiler::CallExpr,        Precedence::CALL },             // LEFT_PAREN
+    { nullptr,                      nullptr,                    Precedence::NONE },             // RIGHT_PAREN
+    { &Compiler::DictExpr,          nullptr,                    Precedence::NONE },             // LEFT_BRACE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // RIGHT_BRACE
+    { &Compiler::ListExpr,          &Compiler::IndexExpr,       Precedence::CALL },             // LEFT_BRACKET
+    { nullptr,                      nullptr,                    Precedence::NONE },             // RIGHT_BRACKET
+    { nullptr,                      nullptr,                    Precedence::NONE },             // COMMA
+    { nullptr,                      &Compiler::DotExpr,         Precedence::CALL },             // DOT
+    { nullptr,                      nullptr,                    Precedence::NONE },             // ELLIPSIS
+    { &Compiler::UnaryExpr,         &Compiler::BinaryExpr,      Precedence::TERM },             // MINUS
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::TERM },             // PLUS
+    { nullptr,                      nullptr,                    Precedence::NONE },             // QUESTION
+    { nullptr,                      nullptr,                    Precedence::NONE },             // SEMICOLON
+    { nullptr,                      &Compiler::DotExpr,         Precedence::CALL },             // COLON
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::FACTOR },           // SLASH
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::FACTOR },           // STAR
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::FACTOR },           // PERCENT
     
     // One-or-two character tokens
-    { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },         // EQUAL
-    { nullptr,                  &Compiler::Binary,      Precedence::EQUALITY },         // BANG_EQUAL
-    { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // GREATER
-    { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // GREATER_EQUAL
-    { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // LESS
-    { nullptr,                  &Compiler::Binary,      Precedence::COMPARISON },       // LESS_EQUAL
-    { nullptr,                  nullptr,                Precedence::NONE },             // LEFT_ARROW
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::EQUALITY },         // EQUAL
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::EQUALITY },         // BANG_EQUAL
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::COMPARISON },       // GREATER
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::COMPARISON },       // GREATER_EQUAL
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::COMPARISON },       // LESS
+    { nullptr,                      &Compiler::BinaryExpr,      Precedence::COMPARISON },       // LESS_EQUAL
+    { nullptr,                      nullptr,                    Precedence::NONE },             // LEFT_ARROW
 
     // Literals         
-    { &Compiler::Variable,      nullptr,                Precedence::NONE },             // IDENTIFIER
-    { &Compiler::String,        nullptr,                Precedence::NONE },             // STRING
-    { &Compiler::Number,        nullptr,                Precedence::NONE },             // NUMBER
-    { nullptr,                  nullptr,                Precedence::NONE },             // ERROR
+    { &Compiler::VariableExpr,      nullptr,                    Precedence::NONE },             // IDENTIFIER
+    { &Compiler::StringExpr,        nullptr,                    Precedence::NONE },             // STRING
+    { &Compiler::NumberExpr,        nullptr,                    Precedence::NONE },             // NUMBER
+    { nullptr,                      nullptr,                    Precedence::NONE },             // ERROR
 
     // Keywords         
-    { nullptr,                  &Compiler::And,         Precedence::AND },              // AND
-    { nullptr,                  nullptr,                Precedence::NONE },             // AT
-    { nullptr,                  nullptr,                Precedence::NONE },             // BOX
-    { nullptr,                  nullptr,                Precedence::NONE },             // BREAK
-    { nullptr,                  nullptr,                Precedence::NONE },             // BY
-    { &Compiler::Category,      nullptr,                Precedence::NONE },             // CATEGORY
-    { nullptr,                  nullptr,                Precedence::NONE },             // CONTINUE
-    { nullptr,                  nullptr,                Precedence::NONE },             // COUNT
-    { nullptr,                  nullptr,                Precedence::NONE },             // DO
-    { nullptr,                  nullptr,                Precedence::NONE },             // ELSE
-    { nullptr,                  nullptr,                Precedence::NONE },             // ELSEIF
-    { nullptr,                  nullptr,                Precedence::NONE },             // END
-    { &Compiler::Literal,       nullptr,                Precedence::NONE },             // FALSE
-    { &Compiler::Function,      nullptr,                Precedence::NONE },             // FUNCTION
-    { nullptr,                  nullptr,                Precedence::NONE },             // FOREACH
-    { nullptr,                  nullptr,                Precedence::NONE },             // FROM
-    { &Compiler::Ternary,       nullptr,                Precedence::NONE },             // IF
-    { nullptr,                  nullptr,                Precedence::NONE },             // IN
-    { nullptr,                  nullptr,                Precedence::NONE },             // INSPECT
-    { &Compiler::Literal,       nullptr,                Precedence::NONE },             // NIL
-    { &Compiler::Unary,         nullptr,                Precedence::NONE },             // NOT
-    { nullptr,                  nullptr,                Precedence::NONE },             // OF
-    { nullptr,                  &Compiler::Or,          Precedence::OR },               // OR
-    { nullptr,                  nullptr,                Precedence::NONE },             // RETURN
-    { &Compiler::Share,         nullptr,                Precedence::NONE },             // SHARE
-    { nullptr,                  nullptr,                Precedence::NONE },             // SHARED
-    { nullptr,                  nullptr,                Precedence::NONE },             // THEN
-    { &Compiler::Thing,         nullptr,                Precedence::NONE },             // THING
-    { nullptr,                  nullptr,                Precedence::NONE },             // TO
-    { &Compiler::Literal,       nullptr,                Precedence::NONE },             // TRUE
-    { nullptr,                  nullptr,                Precedence::NONE },             // WHEN
-    { nullptr,                  nullptr,                Precedence::NONE },             // WHILE
+    { nullptr,                      &Compiler::AndExpr,         Precedence::AND },              // AND
+    { nullptr,                      nullptr,                    Precedence::NONE },             // AT
+    { nullptr,                      nullptr,                    Precedence::NONE },             // BOX
+    { nullptr,                      nullptr,                    Precedence::NONE },             // BREAK
+    { nullptr,                      nullptr,                    Precedence::NONE },             // BY
+    { &Compiler::CategoryExpr,      nullptr,                    Precedence::NONE },             // CATEGORY
+    { nullptr,                      nullptr,                    Precedence::NONE },             // CONTINUE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // COUNT
+    { nullptr,                      nullptr,                    Precedence::NONE },             // DO
+    { nullptr,                      nullptr,                    Precedence::NONE },             // ELSE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // ELSEIF
+    { nullptr,                      nullptr,                    Precedence::NONE },             // END
+    { &Compiler::LiteralExpr,       nullptr,                    Precedence::NONE },             // FALSE
+    { &Compiler::FunctionExpr,      nullptr,                    Precedence::NONE },             // FUNCTION
+    { nullptr,                      nullptr,                    Precedence::NONE },             // FOREACH
+    { nullptr,                      nullptr,                    Precedence::NONE },             // FROM
+    { &Compiler::TernaryExpr,       nullptr,                    Precedence::NONE },             // IF
+    { nullptr,                      nullptr,                    Precedence::NONE },             // IN
+    { nullptr,                      nullptr,                    Precedence::NONE },             // INSPECT
+    { &Compiler::LiteralExpr,       nullptr,                    Precedence::NONE },             // NIL
+    { &Compiler::UnaryExpr,         nullptr,                    Precedence::NONE },             // NOT
+    { nullptr,                      nullptr,                    Precedence::NONE },             // OF
+    { nullptr,                      &Compiler::OrExpr,          Precedence::OR },               // OR
+    { nullptr,                      nullptr,                    Precedence::NONE },             // RETURN
+    { &Compiler::ShareExpr,         nullptr,                    Precedence::NONE },             // SHARE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // SHARED
+    { nullptr,                      nullptr,                    Precedence::NONE },             // THEN
+    { &Compiler::ThingExpr,         nullptr,                    Precedence::NONE },             // THING
+    { nullptr,                      nullptr,                    Precedence::NONE },             // TO
+    { &Compiler::LiteralExpr,       nullptr,                    Precedence::NONE },             // TRUE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // WHEN
+    { nullptr,                      nullptr,                    Precedence::NONE },             // WHILE
 
-    { nullptr,                  nullptr,                Precedence::NONE },             // END_OF_FILE
+    { nullptr,                      nullptr,                    Precedence::NONE },             // END_OF_FILE
 };
 
 /**
@@ -1253,7 +1279,7 @@ void Compiler::MarkGetter() {
 /**
  * Parses an expression in parentheses.
  */
-void Compiler::Grouping(bool canAssign) {
+void Compiler::GroupingExpr(bool canAssign) {
     Expression();
     parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after expression");
 
@@ -1265,7 +1291,7 @@ void Compiler::Grouping(bool canAssign) {
 /**
  * Parses () postfix.
  */
-void Compiler::Call(bool canAssign) {
+void Compiler::CallExpr(bool canAssign) {
     ObjFunction::Arguments arguments = ArgumentList(UINT8_COUNT);
 
     /*
@@ -1334,7 +1360,7 @@ ObjFunction::Arguments Compiler::ArgumentList(std::size_t argcMax) {
 /**
  * Parses [] postfix.
  */
-void Compiler::Index(bool canAssign) {
+void Compiler::IndexExpr(bool canAssign) {
     Expression();
 
     // expression[ a to b ]
@@ -1365,7 +1391,7 @@ void Compiler::Index(bool canAssign) {
 }
 
 
-void Compiler::Dot(bool canAssign) {
+void Compiler::DotExpr(bool canAssign) {
     // Can either be a . or :
     Token dotted = parser.previous;
     if (dotted.type == TokenType::COLON) {
@@ -1421,7 +1447,7 @@ void Compiler::Dot(bool canAssign) {
 /**
  * Parses a unary expression and emits the corresponding bytecode. 
  */
-void Compiler::Unary(bool canAssign) {
+void Compiler::UnaryExpr(bool canAssign) {
     /*
         Recall that the instruction goes after its operand, such as:
         OP_CONSTANT 5
@@ -1452,7 +1478,7 @@ void Compiler::Unary(bool canAssign) {
  * Parses a 'share' expression, which marks the given expression
  * as not copied when stored.
  */
-void Compiler::Share(bool canAssign) {
+void Compiler::ShareExpr(bool canAssign) {
     ParsePrecedence(Precedence::UNARY);
 
     /*
@@ -1478,7 +1504,7 @@ void Compiler::Share(bool canAssign) {
 /**
  * Parses a binary expression with two operands.
  */
-void Compiler::Binary(bool canAssign) {
+void Compiler::BinaryExpr(bool canAssign) {
     // When we reach this function, the 'previous' token
     // points to the infix operator. (+, -, /, *, etc)
     TokenType operatorType = parser.previous.type;
@@ -1510,7 +1536,7 @@ void Compiler::Binary(bool canAssign) {
  * Parses an 'and' expression.
  * <left> and <right>
  */
-void Compiler::And(bool canAssign) {
+void Compiler::AndExpr(bool canAssign) {
     // At this point, we already compiled the lefthand prefix 
     // expression. If it's false, we can just jump over compiling
     // the right hand side, and leave the lefthand side value
@@ -1528,7 +1554,7 @@ void Compiler::And(bool canAssign) {
  * Parses an 'or' expression.
  * <left> or <right>
  */
-void Compiler::Or(bool canAssign) {
+void Compiler::OrExpr(bool canAssign) {
     // If the lefthand expression is true, jump to the end and 
     // leave the lefthand value on the stack.
     std::size_t endJump = EmitJump(OpCode::JUMP_IF_TRUE_OR_POP);
@@ -1544,7 +1570,7 @@ void Compiler::Or(bool canAssign) {
 /**
  * Parses a ternary statement
  */
-void Compiler::Ternary(bool canAssign) {
+void Compiler::TernaryExpr(bool canAssign) {
     // <condition> ? <then-expression> : <else-expression>
     //               ^^^^^^^^^^^^^^^^^ You are here.
     Expression(); // condition
@@ -1567,7 +1593,7 @@ void Compiler::Ternary(bool canAssign) {
 /**
  * Emits a literal (true, false, nil)
  */
-void Compiler::Literal(bool canAssign) {
+void Compiler::LiteralExpr(bool canAssign) {
     TokenType literalType = parser.previous.type;
 
     switch (literalType) {
@@ -1583,7 +1609,7 @@ void Compiler::Literal(bool canAssign) {
 /**
  * Emits a number into the bytecode stream.
  */
-void Compiler::Number(bool canAssign) {
+void Compiler::NumberExpr(bool canAssign) {
     double value = std::strtod(parser.previous.start, nullptr);
     EmitConstant(value);
 }
@@ -1592,7 +1618,7 @@ void Compiler::Number(bool canAssign) {
 /**
  * Emits a string into the bytecode stream.
  */
-void Compiler::String(bool canAssign) {
+void Compiler::StringExpr(bool canAssign) {
     Vector<char> buffer(vm);
     Token& string = parser.previous;
     std::size_t stringLength = string.length - 2; // to account for surrounding quotes
@@ -1633,7 +1659,7 @@ void Compiler::String(bool canAssign) {
 /**
  * Handles a function literal/anonymous function.
  */
-void Compiler::Function(bool canAssign) {
+void Compiler::FunctionExpr(bool canAssign) {
     FunctionUnit unit{ vm, *this, parser };
     PushUnit(&unit, FunctionType::FUNCTION);
 
@@ -1643,75 +1669,7 @@ void Compiler::Function(bool canAssign) {
     // Parse arguments
     
     if (!parser.Check(TokenType::RIGHT_PAREN)) {
-        ObjFunction* currentFunction = currentUnit->function;
-        ObjFunction::Arguments& parameters = currentFunction->parameters;
-
-        do {
-            parameters.arity++;
-            if (parameters.arity > UINT8_MAX) {
-                parser.ErrorAtCurrent("can't have more than 255 parameters");
-            }
-
-            if (parser.Match(TokenType::SHARED)) {
-                if (parameters.arity > 8) {
-                    parser.ErrorAtCurrent("can't define any more shared parameters after the 8th parameter");
-                }
-
-                /*
-                    When we reach a shared parameter, we store it in the function
-                    as a bitmask. sharedParameters is simply a uint where each bit
-                    corresponds to one parameter, 1 meaning it's shared, and 0 meaning
-                    it's not.
-
-                    e.g.
-                    1011 - first, second, fourth values are shared, third one is not
-                */
-                parameters.MarkShared(parameters.arity - 1);
-            }
-
-            std::uint8_t constant = ParseVariable("expected parameter name");
-            DefineVariable(constant);
-
-            /*
-                Default arguments are handled by compiling the default
-                expressions inside the function's chunk. Each function chunk
-                has a little prebody where it pushes the expressions on the
-                stack. Those expressions on the stack are the arguments that
-                the function will use.
-
-                Then during runtime, the VM will select where to start on the
-                function depending on its arg count + default count.
-
-                The function chunk code for a function like...
-
-                box test <- function(a <- 1, b <- 2)
-
-                end
-                
-                may look like...
-
-                == test ==
-                0000    2 OP_CONSTANT             0 '1'
-                0002    | OP_CONSTANT             1 '2'
-                ...
-
-                where if the user omitted B, the VM will start
-                the function at 0002. If the user omitted both,
-                the VM will start the function at 0000. 
-            */
-            if (parser.Match(TokenType::LEFT_ARROW)) {
-                currentFunction->MarkDefault();
-                Expression();
-
-            } else if (currentFunction->defaults.Count() > 0) {
-                parser.Error("can't define a non-default parameter after a default parameter");
-            } else {
-                parameters.minArity++;
-            }
-
-        } while (parser.Match(TokenType::COMMA));
-
-        currentFunction->MarkDefault();
+        ParameterList(currentUnit->function);
     }
 
     parser.Consume(TokenType::RIGHT_PAREN, "expected ')' after parameters");
@@ -1731,11 +1689,104 @@ void Compiler::Function(bool canAssign) {
 }
 
 
+void Compiler::ParameterList(ObjFunction* function) {
+    bool hasPrebody = false;
+    ObjFunction::Arguments& parameters = function->parameters;
+
+    do {
+        if (parser.Match(TokenType::SHARED)) {
+            if (parameters.arity >= 8) {
+                parser.Error("can't define any more shared parameters after the 8th parameter");
+            }
+
+            /*
+                When we reach a shared parameter, we store it in the function
+                as a bitmask. sharedParameters is simply a uint where each bit
+                corresponds to one parameter, 1 meaning it's shared, and 0 meaning
+                it's not.
+
+                e.g.
+                1011 - first, second, fourth values are shared, third one is not
+            */
+            parameters.MarkShared(parameters.arity);
+        }
+
+        Variable parameter = ParseVariable("expected parameter name");
+        DefineVariable(parameter);
+
+        // e.g. args...)
+        if (parser.Match(TokenType::ELLIPSIS)) {
+            parameters.variadic = true;
+            hasPrebody = true;
+
+            function->MarkDefault();
+            EmitByte(OpCode::LIST);
+            break;
+        }
+
+        parameters.arity++;
+        if (parameters.arity > UINT8_MAX) {
+            parser.ErrorAtCurrent("can't have more than 255 parameters");
+        }
+
+        /*
+            Default arguments are handled by compiling the default
+            expressions inside the function's chunk. Each function chunk
+            has a little prebody where it pushes the expressions on the
+            stack. Those expressions on the stack are the arguments that
+            the function will use.
+
+            Then during runtime, the VM will select where to start on the
+            function depending on its arg count + default count.
+
+            The function chunk code for a function like...
+
+            box test <- function(a <- 1, b <- 2)
+
+            end
+            
+            may look like...
+
+            == test ==
+                    --------- MARK DEFAULT
+            0000    2 OP_CONSTANT             0 '1'
+                    --------- MARK DEFAULT
+            0002    | OP_CONSTANT             1 '2'
+            ...
+
+            where if the user omitted B, the VM will start
+            the function at 0002. If the user omitted both,
+            the VM will start the function at 0000. 
+        */
+        if (parser.Match(TokenType::LEFT_ARROW)) {
+            function->MarkDefault();
+            Expression();
+            hasPrebody = true;
+
+        } else if (function->defaults.Count() > 0) {
+            parser.Error("can't define a non-default parameter after a default parameter");
+        }
+        
+        else {
+            parameters.minArity++;
+        }
+
+    } while (parser.Match(TokenType::COMMA));
+
+    // If we had any prebody, we'll make sure to mark the end of it
+    // so that the VM can skip it if needed.
+    if (hasPrebody) {
+        // An args... left out will just be filled in with an empty list.
+        function->MarkDefault();
+    }
+}
+
+
 /**
  * Handles a list literal 
  * e.g. [1, 2, 3, 4, 5...]
  */
-void Compiler::List(bool canAssign) {
+void Compiler::ListExpr(bool canAssign) {
     EmitByte(OpCode::LIST);
     if (!parser.Check(TokenType::RIGHT_BRACKET)) {
         do {
@@ -1749,7 +1800,7 @@ void Compiler::List(bool canAssign) {
 }
 
 
-void Compiler::Dictionary(bool canAssign) {
+void Compiler::DictExpr(bool canAssign) {
     EmitByte(OpCode::DICT);
     
     if (!parser.Check(TokenType::RIGHT_BRACE)) {
@@ -1786,7 +1837,7 @@ void Compiler::Dictionary(bool canAssign) {
 /**
  * Handles a thing expression
  */
-void Compiler::Thing(bool canAssign) {
+void Compiler::ThingExpr(bool canAssign) {
     EmitByte(OpCode::THING);
 
     if (parser.Match(TokenType::OF)) {
@@ -1833,7 +1884,7 @@ void Compiler::Thing(bool canAssign) {
  *      VIOLET  
  * end
  */
-void Compiler::Category(bool canAssign) {
+void Compiler::CategoryExpr(bool canAssign) {
     EmitByte(OpCode::CATEGORY);
 
     if (!parser.Match(TokenType::END)) {
@@ -1863,7 +1914,7 @@ void Compiler::Category(bool canAssign) {
 /**
  * Handles a variable expression
  */
-void Compiler::Variable(bool canAssign) {
+void Compiler::VariableExpr(bool canAssign) {
     Token& name = parser.previous;
     NamedVariable(name, canAssign);
 }

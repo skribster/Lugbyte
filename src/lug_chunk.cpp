@@ -18,12 +18,11 @@ Chunk::~Chunk() {
 void Chunk::Write(std::uint8_t byte, const Token& where) {
     bytecode.PushBack(byte);
 
-    // Check if we're still on the same line as the last instruction.
-    SourcePosition& lastPosition = positions[positions.Count() - 1];
+    // Check if we're still on the same line as the last instruction. 
     if (
         positions.Count() > 0 
-        && lastPosition.line == where.line
-        && lastPosition.line == where.column
+        && positions[positions.Count() - 1].line == where.line
+        && positions[positions.Count() - 1].line == where.column
     ) {
         return;
     }
@@ -78,7 +77,7 @@ void Chunk::WriteConstant(Value value, const Token& where) {
 /**
  * Adds a constant into the chunk's constant pool.
  */
-std::size_t Chunk::AddConstant(Value value) {
+Chunk::ConstantIndex Chunk::AddConstant(Value value) {
     // So the GC doesn't collect when we add it to the vector
     vm.stack.Push(value); 
     constants.PushBack(value);

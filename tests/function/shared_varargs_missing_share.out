@@ -1,0 +1,3 @@
+runtime error: expected a shared argument at argument 2
+stack traceback:
+    tests:5:18: in script

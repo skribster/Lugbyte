@@ -1,0 +1,7 @@
+box test <- function(args...)
+    print(args:length())
+    print(args:join(", "))
+end
+
+test(1, 2, 3)
+test(1, "hello", 432)

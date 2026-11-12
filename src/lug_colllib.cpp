@@ -210,6 +210,23 @@ static Value Join(VMCore& vm, Value* args, std::size_t argCount) {
 
 }
 
+
+static constexpr NativeEntry listLib[] = {
+    { "append",     &List::Append },
+    { "remove",     &List::Remove },
+    { "insert",     &List::Insert },
+    { "pop",        &List::Pop },
+    { "clone",      &List::Clone },
+    { "sum",        &List::Sum },
+    { "length",     &List::Length },
+    { "get",        &List::Get },
+    { "index",      &List::Index },
+    { "concat",     &List::Concat },
+    { "clear",      &List::Clear },
+    { "join",       &List::Join },
+};
+
+
 // Dictionary methods ---------------------------
 
 namespace Dict {
@@ -322,24 +339,6 @@ static Value Has(VMCore& vm, Value* args, std::size_t argCount) {
 }
 
 }
-
-// Library out ------------------------------
-
-static constexpr NativeEntry listLib[] = {
-    { "append",     &List::Append },
-    { "remove",     &List::Remove },
-    { "insert",     &List::Insert },
-    { "pop",        &List::Pop },
-    { "clone",      &List::Clone },
-    { "sum",        &List::Sum },
-    { "length",     &List::Length },
-    { "get",        &List::Get },
-    { "index",      &List::Index },
-    { "concat",     &List::Concat },
-    { "clear",      &List::Clear },
-    { "join",       &List::Join },
-};
-
 
 static constexpr NativeEntry dictLib[] = {
     { "clear",      &Dict::Clear },

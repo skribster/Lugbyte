@@ -1,5 +1,5 @@
 #include <cstdio>
-#include <cstring>
+#include <algorithm>
 #include <cmath>
 #include <unordered_map>
 
@@ -270,47 +270,184 @@ void VMCore::MarkRoots() {
 }
 
 
-void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
+// void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
+//     const ObjFunction::Arguments& parameters = closure->function->parameters;
+//     if (argCount > parameters.arity || argCount < parameters.minArity) {
+//         if (parameters.arity == parameters.minArity) {
+//             throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
+//         } else {
+//             throw RuntimeError("expected %d to %d arguments but got %d", parameters.minArity, parameters.arity, argCount);
+//         }
+//     }
+    
+//     // Handle default args...
+//     int argDifference = parameters.arity - argCount;
+//     const auto& defaults = closure->function->defaults;
+//     int startOffset = 0;
+
+//     // We have to determine the start offset depending on our arg count.
+//     if (defaults.Count() > 0) {
+//         ASSERT(
+//             defaults.Count() == parameters.arity - parameters.minArity + 1, 
+//             "Default count mismatched"
+//         );
+
+//         startOffset = defaults[defaults.Count() - argDifference - 1];
+//     }
+
+//     // If the 'shared' parameters don't align, we error.
+//     // The argCountMask is to make sure that this only checks for
+//     // the arguments we passed IN. If we had a shared default argument
+//     // and we don't supply it in the call site, we don't want to error.
+//     std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << argCount) - 1;
+//     std::uint8_t masked = parameters.shared & ~shared & argCountMask;
+//     if ((masked) != 0) {
+//         int index = CountTrailingZeroes(masked);
+//         throw RuntimeError("expected a shared argument at argument %d", index + 1);
+//     }
+
+//     if (stack.frameCount == Stack::FRAMES_MAX) {
+//         throw RuntimeError("stack overflow");
+//     }
+
+//     Value* slots = stack.top - parameters.arity + argDifference - 1;
+//     stack.AddFrame(closure, slots, startOffset);
+// }
+
+
+void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t sharedMask) {
     const ObjFunction::Arguments& parameters = closure->function->parameters;
-    if (argCount > parameters.arity || argCount < parameters.minArity) {
-        if (parameters.arity == parameters.minArity) {
-            throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
-        } else {
-            throw RuntimeError("expected %d to %d arguments but got %d", parameters.minArity, parameters.arity, argCount);
+
+    // Check arity ------------------------------
+    /**
+     * Errors at:
+     * box a <- function(a, b) end
+     * a(1)
+     */
+    if (!parameters.variadic && argCount != parameters.arity && parameters.arity == parameters.minArity) {
+        throw RuntimeError("expected %d argument(s) but got %d", parameters.arity, argCount);
+    }
+
+    /**
+     * Errors at:
+     * box a <- function(a, b, c <- 2) end
+     * a(1)
+     */
+    if (argCount < parameters.minArity) {
+        throw RuntimeError("expected at least %d argument(s) but got %d", parameters.minArity, argCount);
+    }
+
+    /**
+     * Errors at:
+     * box a <- function(a <- 1, b <- 2) end
+     * a(1, 2, 3)
+     */
+    else if (argCount > parameters.arity && !parameters.variadic) {
+        throw RuntimeError("expcted at most %d argument(s) but got %d", parameters.arity, argCount);
+    }
+
+    // Handle varargs ---------------------------
+    
+    // If we have any varargs, we will pack all the 
+    // extra args into a list.
+    int numVarargs = std::max(argCount - parameters.arity, 0);
+    if (parameters.variadic && numVarargs > 0) {
+        ObjList* packed = ObjList::New(*this);
+        
+        for (int i = 0; i < numVarargs; i++) {
+            Value arg = stack.Peek(0);
+            
+            stack.Push(packed);
+            packed->Insert(0, arg);
+            stack.Pop(); // list
+            
+            stack.Pop(); // arg
         }
+        
+        stack.Push(packed);
     }
     
-    // Handle default args...
-    int argDifference = parameters.arity - argCount;
-    const auto& defaults = closure->function->defaults;
-    int startOffset = 0;
-
-    // We have to determine the start offset depending on our arg count.
-    if (defaults.Count() > 0) {
-        ASSERT(
-            defaults.Count() == parameters.arity - parameters.minArity + 1, 
-            "Default count mismatched"
-        );
-
-        startOffset = defaults[defaults.Count() - argDifference - 1];
-    }
-
+    // Handle shared ----------------------------
+    
     // If the 'shared' parameters don't align, we error.
     // The argCountMask is to make sure that this only checks for
     // the arguments we passed IN. If we had a shared default argument
     // and we don't supply it in the call site, we don't want to error.
     std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << argCount) - 1;
-    std::uint8_t masked = parameters.shared & ~shared & argCountMask;
+    std::uint8_t masked = parameters.shared & ~sharedMask & argCountMask;
     if ((masked) != 0) {
         int index = CountTrailingZeroes(masked);
         throw RuntimeError("expected a shared argument at argument %d", index + 1);
     }
-
+    
     if (stack.frameCount == Stack::FRAMES_MAX) {
         throw RuntimeError("stack overflow");
     }
+    
+    // Handle default args ----------------------
+    
+    int numOmitted = std::max(parameters.arity - argCount, 0);
+    // We'll also account for the varargs and say that it's technically
+    // another parameter that we omitted. 
+    if (parameters.variadic && numVarargs == 0) numOmitted++;
 
-    Value* slots = stack.top - parameters.arity + argDifference - 1;
+    const Vector<std::size_t>& defaults = closure->function->defaults;
+    int startOffset = 0;
+    
+    /*
+        The start offset of the function is determined by how many parameters
+        have been omitted. Recall that a function has a prebody to fill in
+        the omitted parameters. i.e. a function that has:
+
+        box test <- function(a <- 1, b <- 2) end
+        test()
+
+        will have a function chunk such as:
+        == test ==
+        * --------- MARK DEFAULT (0)
+        0000    2 OP_CONSTANT             0 '1'
+        * --------- MARK DEFAULT (2)
+        0002    | OP_CONSTANT             1 '2'
+        * --------- MARK DEFAULT (4 END)
+        ... (rest of the function)
+
+        Then, we can choose a starting offset, and when that function starts and
+        goes through the prebody, those missing values will be filled in on the
+        stack.
+     */
+    if (defaults.Count() > 0) {
+        startOffset = defaults[defaults.Count() - numOmitted - 1];
+    } 
+
+    if (parameters.variadic && numVarargs > 0) {
+        /*
+            If we have function a:
+            box a <- function(req, args...) end 
+
+            And we pass in 1, 2, 3 as varargs to a function:
+            [ <fn a >][ "required" ][ 1 ][ 2 ][ 3 ]
+                                                   ^^^^^^^^^ stackTop
+
+            We convert varargs to a list on the stack like this:
+            [ <fn a> ][ "required" ][ [1, 2, 3] ]
+
+            Therefore argCount goes from 4 -> 2. The formula is
+            argCount = argCount - numVarargs (3) + 1 (the list)
+         */
+        argCount = argCount - numVarargs + 1;
+    } 
+    /*
+        The -1 is to account for stack slot zero, which we use
+        to hold the function object on the stack.
+
+        [ <fn a> ] [ "required" ][ [1, 2, 3] ]
+                  ^ stackTop is right here...
+
+         [ <fn a> ][ "required" ][ [1, 2, 3] ]
+        ^ The -1 places it where it's supposed to go!
+         GET_LOCAL(1) would now correctly get "required".
+     */
+    Value* slots = stack.top - argCount - 1;
     stack.AddFrame(closure, slots, startOffset);
 }
 
@@ -1060,7 +1197,7 @@ void VMCore::Run() {
                 // When we emitted OP_CLOSURE, we were done parsing
                 // a function declaration. Now, the current function is
                 // the SURROUNDING function of that declaration, so we can
-                // read the upvalue right from the current ``call frame to grab
+                // read the upvalue right from the current call frame to grab
                 // it from the enclosing function.
                 if (isLocal) {
                     closure->upvalues[i] = CaptureUpvalue(frame->slots + index);

@@ -106,6 +106,7 @@ struct ObjFunction : Obj {
         std::uint8_t arity{ 0 };
         std::uint8_t minArity{ 0 };
         std::uint8_t shared{ 0 };
+        bool variadic{ false };
 
         inline void MarkShared(std::size_t argIndex) {
             shared |= (1 << argIndex);

@@ -1,5 +1,5 @@
 /* Statements */
-statement           ::= variable
+statement           ::= box
                       | print
                       | break
                       | continue
@@ -9,7 +9,7 @@ statement           ::= variable
                       | for
                       | count
 
-variable            ::= 'box' IDENTIFIER '<-' expression
+box                 ::= 'box' identifier_list '<-' expression_list
 break               ::= 'break'
 continue            ::= 'continue'
 block               ::= statement* ( 'return' expression )?
@@ -49,8 +49,10 @@ thing               ::= 'thing' ( 'of' expression )?
 
 /* Utility rules */
 arguments           ::= expression ( ',' expression )*
-parameters          ::= 'shared'? IDENTIFIER ( ',' 'shared'? IDENTIFIER )*
+parameters          ::= parameter ( ',' parameter )*
+parameter           ::= 'shared'? IDENTIFIER ('<-' expression)?
 
 expression_list     ::= expression (',' expression)*
+identifier_list     ::= IDENTIFIER (',' IDENTIFIER)*
 keyvalue_list       ::= keyvalue_pair (',' keyvalue_pair)*
 keyvalue_pair       ::= (primary '<-' expression) | ('[' expression ']' '<-' expression)
