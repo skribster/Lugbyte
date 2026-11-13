@@ -7,7 +7,7 @@ box Interpreter     <- unbox("src/interpreter")
 box Token           <- unbox("src/token")
 
 // Language pipeline ----------------------------
-box newLexer <- Lexer.new("1 + \"hello\"")
+box newLexer <- Lexer.new("1 + 2")
 box tokens <- newLexer:scanTokens()
 
 box newParser <- Parser.new(tokens)
@@ -15,7 +15,7 @@ box expr <- newParser:expression()
 
 box printer <- ASTPrinter.new()
 
-print(printer:print(expr))
+print(printer:print(share expr))
 
 box interpreter <- Interpreter.new()
-interpreter:interpret(expr)
+interpreter:interpret(share expr)

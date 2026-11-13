@@ -796,7 +796,13 @@ Obj* ObjThing::Copy() {
         Value name = attribute.key.Copy();
         Value value = attribute.value.Copy();
 
+        vm.stack.Push(name);
+        vm.stack.Push(value);
+
         copy->Set(name.AsObj<ObjString>(), value);
+        
+        vm.stack.Pop();
+        vm.stack.Pop();
     }
     
     vm.stack.Pop();

@@ -26,9 +26,9 @@ Interpreter.new <- function()
 end
 
 
-Interpreter.interpret <- function(shared self, expr)
+Interpreter.interpret <- function(shared self, shared expr)
     box result <- pcall(function()
-        box value <- self:evaluate(expr)
+        box value <- self:evaluate(share expr)
         print(value)
     end)
 
@@ -38,14 +38,14 @@ Interpreter.interpret <- function(shared self, expr)
 end
 
 
-Interpreter.evaluate <- function(shared self, expr)
-    return expr:accept(self)
+Interpreter.evaluate <- function(shared self, shared expr)
+    return expr:accept(share self)
 end
 
 
 Interpreter.visitBinaryExpr <- function(shared self, expr)
-    box left <- self:evaluate(expr.left)
-    box right <- self:evaluate(expr.right)
+    box left <- self:evaluate(share expr.left)
+    box right <- self:evaluate(share expr.right)
 
     inspect expr.operator.type
         // Arithmetic operators
@@ -118,7 +118,7 @@ end
 
 
 Interpreter.visitUnaryExpr <- function(shared self, expr)
-    box right <- self:evaluate(expr.right)
+    box right <- self:evaluate(share expr.right)
 
     inspect expr.operator.type
         when Token.Type.NOT do

@@ -1417,6 +1417,8 @@ void Compiler::DotExpr(bool canAssign) {
         ObjFunction::Arguments arguments = ArgumentList(ObjFunction::Arguments::MAX_ARITY - 1);
 
         // The first argument is always shared in a self call.
+        
+        arguments.shared <<= 1;
         arguments.MarkShared(0);
         
         // ArgumentList() parsed all the arguments AFTER the self argument,

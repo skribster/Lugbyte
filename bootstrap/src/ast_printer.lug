@@ -6,27 +6,27 @@ ASTPrinter.new <- function()
 end
 
 
-ASTPrinter.print <- function(shared self, expr)
-    return expr:accept(self)
+ASTPrinter.print <- function(shared self, shared expr)
+    return expr:accept(share self)
 end
 
 
-ASTPrinter.visitBinaryExpr <- function(shared self, expr)
+ASTPrinter.visitBinaryExpr <- function(shared self, shared expr)
     return self:parenthesize(expr.operator.lexeme, expr.left, expr.right)
 end
 
 
-ASTPrinter.visitGroupingExpr <- function(shared self, expr)
+ASTPrinter.visitGroupingExpr <- function(shared self, shared expr)
     return self:parenthesize("group", expr.expression)
 end
 
 
-ASTPrinter.visitLiteralExpr <- function(shared self, expr)
+ASTPrinter.visitLiteralExpr <- function(shared self, shared expr)
     return string(expr.value)
 end
 
 
-ASTPrinter.visitUnaryExpr <- function(shared self, expr)
+ASTPrinter.visitUnaryExpr <- function(shared self, shared expr)
     return self:parenthesize(expr.operator.lexeme, expr.right)
 end
 
@@ -36,7 +36,7 @@ ASTPrinter.parenthesize <- function(shared self, name, exprs...)
 
     foreach expr in exprs do
         out <- out + " "
-        out <- out + expr:accept(self)
+        out <- out + expr:accept(share self)
     end
 
     out <- out + ")"

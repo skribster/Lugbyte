@@ -7,8 +7,8 @@ Expr.Binary <- function(left, operator, right)
     binaryExpr.left <- left
     binaryExpr.operator <- operator
     binaryExpr.right <- right
-    binaryExpr.accept <- function(shared self, visitor)
-        return visitor:visitBinaryExpr(self)
+    binaryExpr.accept <- function(shared self, shared visitor)
+        return visitor:visitBinaryExpr(share self)
     end
 
     return binaryExpr
@@ -19,8 +19,8 @@ Expr.Grouping <- function(expression)
     box groupingExpr <- thing
 
     groupingExpr.expression <- expression
-    groupingExpr.accept <- function(shared self, visitor)
-        return visitor:visitGroupingExpr(self)
+    groupingExpr.accept <- function(shared self, shared visitor)
+        return visitor:visitGroupingExpr(share self)
     end
 
     return groupingExpr
@@ -31,8 +31,8 @@ Expr.Literal <- function(value)
     box literalExpr <- thing
 
     literalExpr.value <- value
-    literalExpr.accept <- function(shared self, visitor)
-        return visitor:visitLiteralExpr(self)
+    literalExpr.accept <- function(shared self, shared visitor)
+        return visitor:visitLiteralExpr(share self)
     end
     
     return literalExpr
@@ -44,8 +44,8 @@ Expr.Unary <- function(operator, right)
 
     unaryExpr.operator <- operator
     unaryExpr.right <- right
-    unaryExpr.accept <- function(shared self, visitor)
-        return visitor:visitUnaryExpr(self)
+    unaryExpr.accept <- function(shared self, shared visitor)
+        return visitor:visitUnaryExpr(share self)
     end
 
     return unaryExpr

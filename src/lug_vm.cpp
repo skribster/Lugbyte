@@ -44,6 +44,21 @@ static int CountTrailingZeroes(std::uint8_t byte) {
 }
 
 
+static void PrintMask(std::uint8_t mask) {
+    // Print mask as binary representation
+    for (int i = 7; i >= 0; i--) {
+        // Shift bit to the 1st position and mask it
+        std::printf("%d", (mask >> i) & 1);
+        
+        // Add a space every 4 bits for easy readability
+        if (i % 4 == 0 && i != 0) {
+            printf(" ");
+        }
+    }
+    std::printf("\n");
+}
+
+
 // VMCore methods -----------------------------------
 
 VMCore::VMCore(VMConfig config) 
@@ -270,51 +285,6 @@ void VMCore::MarkRoots() {
 }
 
 
-// void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t shared) {
-//     const ObjFunction::Arguments& parameters = closure->function->parameters;
-//     if (argCount > parameters.arity || argCount < parameters.minArity) {
-//         if (parameters.arity == parameters.minArity) {
-//             throw RuntimeError("expected %d arguments but got %d", parameters.arity, argCount);
-//         } else {
-//             throw RuntimeError("expected %d to %d arguments but got %d", parameters.minArity, parameters.arity, argCount);
-//         }
-//     }
-    
-//     // Handle default args...
-//     int argDifference = parameters.arity - argCount;
-//     const auto& defaults = closure->function->defaults;
-//     int startOffset = 0;
-
-//     // We have to determine the start offset depending on our arg count.
-//     if (defaults.Count() > 0) {
-//         ASSERT(
-//             defaults.Count() == parameters.arity - parameters.minArity + 1, 
-//             "Default count mismatched"
-//         );
-
-//         startOffset = defaults[defaults.Count() - argDifference - 1];
-//     }
-
-//     // If the 'shared' parameters don't align, we error.
-//     // The argCountMask is to make sure that this only checks for
-//     // the arguments we passed IN. If we had a shared default argument
-//     // and we don't supply it in the call site, we don't want to error.
-//     std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << argCount) - 1;
-//     std::uint8_t masked = parameters.shared & ~shared & argCountMask;
-//     if ((masked) != 0) {
-//         int index = CountTrailingZeroes(masked);
-//         throw RuntimeError("expected a shared argument at argument %d", index + 1);
-//     }
-
-//     if (stack.frameCount == Stack::FRAMES_MAX) {
-//         throw RuntimeError("stack overflow");
-//     }
-
-//     Value* slots = stack.top - parameters.arity + argDifference - 1;
-//     stack.AddFrame(closure, slots, startOffset);
-// }
-
-
 void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t sharedMask) {
     const ObjFunction::Arguments& parameters = closure->function->parameters;
 
@@ -373,8 +343,9 @@ void VMCore::PushFrame(ObjClosure* closure, std::uint8_t argCount, std::uint8_t 
     // The argCountMask is to make sure that this only checks for
     // the arguments we passed IN. If we had a shared default argument
     // and we don't supply it in the call site, we don't want to error.
-    std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << argCount) - 1;
+    std::uint8_t argCountMask = argCount >= 8 ? 0xFF : (1u << (argCount)) - 1;
     std::uint8_t masked = parameters.shared & ~sharedMask & argCountMask;
+
     if ((masked) != 0) {
         int index = CountTrailingZeroes(masked);
         throw RuntimeError("expected a shared argument at argument %d", index + 1);
@@ -1154,7 +1125,7 @@ void VMCore::Run() {
 
         CASE(SELF): {
             ObjString* methodName = READ_STRING();
-            Value object = stack.Pop();
+            Value object = stack.Peek(0);
             ObjThing* thing = nullptr;
 
             // If the object is of type 'thing', then 'thing' is
@@ -1179,6 +1150,7 @@ void VMCore::Run() {
             
             const Value* value = thing->Get(methodName);
             
+            stack.Pop(); // object
             stack.Push(*value);
             stack.Push(object);
 

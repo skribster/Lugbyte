@@ -1,0 +1,11 @@
+// This is a regression test. There was a bug where copied `thing`s
+// got freed prematurely by the GC since they weren't rooted.
+
+box child <- thing
+child.value <- "alive"
+
+box parent <- thing
+parent.child <- child
+
+box copied <- parent
+print(copied.child.value) // Expect: alive
